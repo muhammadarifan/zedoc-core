@@ -1,0 +1,19 @@
+{
+  "name": "@ze/zedoc-core",
+  "version": "0.1.0",
+  "description": "Framework-free ZeDocument layout runtime shared by the designer and guest renderer",
+  "license": "UNLICENSED",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  }
+}
