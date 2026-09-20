@@ -191,10 +191,9 @@ assert.ok(placedHtml.includes('top:77px') && placedHtml.includes('height:33px'))
 const deco = core.nodeView(T('d', 'D'), { ...ctx(), decorate: (n, v) => { v.attrs['data-x'] = '1' } })
 assert.strictEqual(deco.attrs['data-x'], '1')
 assert.strictEqual(core.toHtml(core.nodeView(T('d', 'D'), { ...ctx(), decorate: () => ({ raw: '<b/>' }) })), '<b/>')
-// ext views (blocks, icons) are only drawn by hosts that know them
+// a node type the runtime doesn't know (the retired `block`) is an empty frame, not a crash
 const blk = { id: 'b', name: 'B', type: 'block', block: 'x', visible: true, opacity: 1, frame: frame(0, 0, 10, 10) }
-assert.ok(core.toHtml(core.nodeView(blk, ctx())).includes('></div>'))
-assert.ok(core.toHtml(core.nodeView(blk, ctx()), (v) => 'EXT:' + v.ext).includes('EXT:block'))
+assert.ok(core.toHtml(core.nodeView(blk, ctx())).endsWith('></div>'))
 // a bare attribute is written without a value
 assert.strictEqual(core.toHtml({ tag: 'div', attrs: { 'data-b': true, id: 'i' }, style: {} }), '<div data-b id="i" style=""></div>')
 

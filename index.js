@@ -689,15 +689,12 @@
   /**
    * Serialises a view tree: attrs in insertion order, then style. A `fragment`
    * is its children with no wrapper, `raw` is trusted markup, an attr set to
-   * `true` is written bare (`<div data-x style=..>`), and an `ext` view (block,
-   * icon: things only the host knows how to draw) is written by the host's
-   * own `ext(view)` or as nothing.
+   * `true` is written bare (`<div data-x style=..>`).
    */
-  function toHtml(view, ext) {
+  function toHtml(view) {
     if (typeof view === 'string') return escapeHtml(view);
     if (view.raw != null) return view.raw;
-    if (view.ext) return ext ? ext(view) : '';
-    if (view.fragment) return view.fragment.map(function (child) { return toHtml(child, ext); }).join('');
+    if (view.fragment) return view.fragment.map(toHtml).join('');
     var attrs = '';
     for (var name in view.attrs) {
       if (!Object.prototype.hasOwnProperty.call(view.attrs, name)) continue;
@@ -705,7 +702,7 @@
     }
     var open = '<' + view.tag + attrs + (view.style ? ' style="' + styleText(view.style) + '"' : '') + '>';
     if (VOID_TAGS[view.tag]) return open;
-    var inner = view.html != null ? view.html : (view.children || []).map(function (child) { return toHtml(child, ext); }).join('');
+    var inner = view.html != null ? view.html : (view.children || []).map(toHtml).join('');
     return open + inner + '</' + view.tag + '>';
   }
 
@@ -825,7 +822,6 @@
         var icon = iconView(node, ctx);
         return icon ? [icon] : [];
       }
-      case 'block': return [{ ext: 'block', node: node, ctx: ctx }];
       case 'group': {
         var inner = childViews(node.children, groupCtx(node, ctx), path);
         // a "frame" crops its children to a shape; an empty one shows the same

@@ -9,13 +9,8 @@
  * v1 scope, deliberately narrow (see the ZeDocument-native template plan):
  *   - Node types: text, image, shape, svg, icon, group, repeat - all drawn by
  *     ZeDocCore's shared node views (icons from its lucide catalogue, so a
- *     placed icon shows up for a guest exactly as on the canvas). `block`
- *     nodes (ze-designer's higher-level, drag-from-the-Blocks-panel
- *     components) are all supported, one hand-ported function per entry in
- *     BLOCK_RENDERERS below (see render/blocks/*.tsx there for the React
- *     source of truth). Media fidelity is approximate (small hand-drawn
- *     stand-ins for the media blocks' icons), everything else matches the
- *     React version's layout and field bindings.
+ *     placed icon shows up for a guest exactly as on the canvas). A
+ *     retired `block` node type is skipped like any unknown type.
  *   - Mostly static visual fidelity. The countdown ticks live (see
  *     countdownScript below) and the Rangkaian Acara "Buka Peta"/"+
  *     Kalender" buttons are real links (see eventButtonLinkOverlaysHtml),
@@ -149,8 +144,7 @@
   var mergeTheme = ZeDocCore.mergeTheme;
   var mergeFontStyleOverride = ZeDocCore.mergeFontStyleOverride;
 
-  // Shared by countdownBlockHtml (the drag-in "Components" widget) and
-  // decorateText's 'Countdown number N' override below (the catalog
+  // Used by decorateText's 'Countdown number N' override below (the catalog
   // artboards' own hand-authored countdown, see build-*.mjs - those bake
   // '12'/'08'/'45'/'30' in as literal, unbound text, so it needs this same
   // computation applied by node name rather than by binding).
@@ -190,8 +184,8 @@
   }
 
   // Whether an event reads as "attending" by default: an explicit prior
-  // response (guestEventRsvp, threaded in from viewer.html the same way as
-  // the Block-based rsvpBlockHtml above) wins, otherwise default to Ya -
+  // response (guestEventRsvp, threaded in from viewer.html) wins, otherwise
+  // default to Ya -
   // same rule assets/engine.js's own attendingFor() uses.
   function attendingDefaultFor(ctx, eventName) {
     var prev = (ctx.data.guestEventRsvp || {})[eventName];
@@ -251,599 +245,11 @@
     textView.children = [text];
   }
 
-  // --- block nodes (ze-designer's src/render/blocks/*.tsx port) ------------
-  //
-  // A `block` node is ze-designer's higher-level, drag-from-the-Blocks-panel
-  // component - opaque here until someone ports its renderer, unlike text/
-  // image/shape/repeat which this file already understands structurally.
-  // BLOCK_RENDERERS is the registry of ports finished so far, keyed by
-  // BlockId (see blockRegistry.ts there); an unlisted block.id still renders
-  // as nothing, same as before any of this existed.
-
-  /** Reads a per-block layout knob out of `node.options`, same helper as
-   *  ze-designer's own `option()` (render/blocks/shared.tsx). */
-  function blockOption(node, key, fallback) {
-    var value = node.options ? node.options[key] : undefined;
-    return value === undefined ? fallback : value;
-  }
-
-  /** Same helper as ze-designer's own `field()` (render/blocks/shared.tsx). */
-  function fieldVal(ctx, key, fallback) {
-    return (ctx.data.fields && ctx.data.fields[key]) || fallback || '';
-  }
-
-  /** A link-bucket counterpart to fieldVal - link_konfirmasi_wa and friends
-   *  live in ctx.data.links, not ctx.data.fields (see bucketFor above). */
+  /** A link-bucket counterpart to the field lookups - link_konfirmasi_wa and
+   *  friends live in ctx.data.links, not ctx.data.fields (see bucketFor above). */
   function linkVal(ctx, key) {
     return (ctx.data.links && ctx.data.links[key]) || '';
   }
-
-  /** Port of shared.tsx's blockShell(). */
-  function blockShellStyle(theme) {
-    return {
-      width: '100%', height: '100%', overflow: 'hidden',
-      color: theme.palette.ink, fontFamily: theme.fonts.body,
-      display: 'flex', flexDirection: 'column', gap: px(10)
-    };
-  }
-
-  /** Port of shared.tsx's Heading. */
-  function headingHtml(ctx, text) {
-    return '<div style="' + styleStr({
-      fontFamily: ctx.theme.fonts.display, fontSize: px(20), lineHeight: 1.2,
-      textAlign: 'center', color: ctx.theme.palette.ink
-    }) + '">' + escapeHtml(text) + '</div>';
-  }
-
-  /** Port of shared.tsx's Caption. Renders nothing for an empty value, same
-   *  as the React version implicitly does by putting empty text in a div. */
-  function captionHtml(ctx, text) {
-    return '<div style="' + styleStr({ fontSize: px(11), lineHeight: 1.5, color: ctx.theme.palette.inkSoft }) + '">' + escapeHtml(text || '') + '</div>';
-  }
-
-  /** Port of shared.tsx's Card. */
-  function cardStyle(ctx, extra) {
-    return Object.assign({
-      background: ctx.theme.palette.surface, border: '1px solid ' + ctx.theme.palette.line,
-      borderRadius: px(ctx.theme.radius), padding: px(10)
-    }, extra || {});
-  }
-
-  /** Port of shared.tsx's Pill. */
-  function pillHtml(ctx, text) {
-    return '<span style="' + styleStr({
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk,
-      borderRadius: px(999), padding: '6px 14px', fontSize: px(11), fontWeight: 600
-    }) + '">' + escapeHtml(text) + '</span>';
-  }
-
-  /** Port of shared.tsx's ScrollArea. */
-  function scrollAreaStyle() {
-    return { flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: px(8) };
-  }
-
-  /** Port of shared.tsx's EmptyHint. */
-  function emptyHintHtml(ctx, label) {
-    return '<div style="' + styleStr({
-      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      border: '1px dashed ' + ctx.theme.palette.line, borderRadius: px(ctx.theme.radius),
-      color: ctx.theme.palette.inkSoft, fontSize: px(11)
-    }) + '">' + escapeHtml(label) + '</div>';
-  }
-
-  // Faithful placeholder icons for the media blocks below (MediaBlocks.tsx
-  // uses lucide-react; these are small hand-drawn equivalents, not pixel-exact
-  // copies - the shared lucide catalogue in ZeDocCore only covers `icon` nodes).
-  function iconPlaySvg(color) {
-    return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="' + color + '" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M10 8.5l6 3.5-6 3.5v-7z" fill="' + color + '" stroke="none"/></svg>';
-  }
-  function iconRadioSvg(color) {
-    return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="' + color + '" stroke-width="1.8"><path d="M5 12a7 7 0 0 1 14 0"/><path d="M7.5 12a4.5 4.5 0 0 1 9 0"/><circle cx="12" cy="17" r="1.6" fill="' + color + '" stroke="none"/></svg>';
-  }
-  function iconMapPinSvg(color) {
-    return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="' + color + '" stroke-width="1.8"><path d="M12 21s7-7.4 7-12a7 7 0 1 0-14 0c0 4.6 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>';
-  }
-  function iconMusicSvg(color) {
-    return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="' + color + '" stroke-width="1.8"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M9 18V6l12-2v12"/></svg>';
-  }
-
-  /** Port of MediaBlocks.tsx's Placeholder. */
-  function placeholderHtml(ctx, iconSvg, label) {
-    return '<div style="' + styleStr({
-      flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: px(6), borderRadius: px(ctx.theme.radius), background: ctx.theme.palette.surface,
-      border: '1px solid ' + ctx.theme.palette.line, color: ctx.theme.palette.inkSoft, fontSize: px(11)
-    }) + '">' + iconSvg + '<span>' + escapeHtml(label) + '</span></div>';
-  }
-
-  function galleryBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'grid');
-    var columns = blockOption(node, 'columns', 3);
-    var gap = blockOption(node, 'gap', 6);
-    var gallery = ctx.data.gallery || [];
-
-    var shellStyle = styleStr({
-      width: '100%', height: '100%', overflow: 'hidden',
-      color: ctx.theme.palette.ink, fontFamily: ctx.theme.fonts.body,
-      display: 'flex', flexDirection: 'column', gap: px(10)
-    });
-
-    if (gallery.length === 0) {
-      var emptyStyle = styleStr({
-        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: '1px dashed ' + ctx.theme.palette.line, borderRadius: px(ctx.theme.radius),
-        color: ctx.theme.palette.inkSoft, fontSize: px(11)
-      });
-      return '<div style="' + shellStyle + '"><div style="' + emptyStyle + '">Galeri kosong</div></div>';
-    }
-
-    // Every catalog template (Evergreen/Whimsical Love/Plum Elegance) pairs
-    // these same two fields the same way - a small eyebrow label above a
-    // big title - matched here (and in GalleryBlock.tsx) so this block reads
-    // the same regardless of which template the couple is actually using.
-    var eyebrowStyle = styleStr({
-      fontFamily: ctx.theme.fonts.body, fontSize: px(11), letterSpacing: px(2),
-      textTransform: 'uppercase', textAlign: 'center', color: ctx.theme.palette.inkSoft
-    });
-    var headingStyle = styleStr({
-      fontFamily: ctx.theme.fonts.display, fontSize: px(20), lineHeight: 1.2,
-      textAlign: 'center', color: ctx.theme.palette.ink
-    });
-    var fields = ctx.data.fields || {};
-    var heading = '<div style="' + eyebrowStyle + '">' + escapeHtml(fields.teks_judul_galeri_1 || 'Kenangan') + '</div>' +
-      '<div style="' + headingStyle + '">' + escapeHtml(fields.teks_judul_galeri_2 || 'Galeri') + '</div>';
-
-    var trackStyle = layout === 'grid'
-      ? { flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'repeat(' + columns + ', 1fr)', gap: px(gap), overflowY: 'auto', alignContent: 'start' }
-      : { flex: 1, minHeight: 0, display: 'flex', gap: px(gap), overflowX: 'auto' };
-
-    var items = gallery.map(function (photo) {
-      // A carousel item keeps a fixed width so it reads as a filmstrip; a
-      // grid cell takes its width from the track and only needs a square
-      // aspect - same reasoning as GalleryBlock.tsx.
-      var itemStyle = styleStr({
-        flex: layout === 'carousel' ? '0 0 96px' : undefined,
-        aspectRatio: '1 / 1', borderRadius: px(ctx.theme.radius),
-        overflow: 'hidden', background: ctx.theme.palette.surface
-      });
-      var imgStyle = styleStr({ width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: 'pointer' });
-      return '<div style="' + itemStyle + '"><img src="' + escapeHtml(photo.foto) + '" alt="" draggable="false" data-zd-gallery-src="' + escapeHtml(photo.foto) + '" style="' + imgStyle + '"></div>';
-    }).join('');
-
-    return '<div style="' + shellStyle + '">' + heading + '<div style="' + styleStr(trackStyle) + '">' + items + '</div></div>';
-  }
-
-  function openingBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'overlay');
-    var bg = fieldVal(ctx, 'foto_background_halaman_awal', '');
-    var light = layout === 'overlay' && bg;
-    var shell = Object.assign(blockShellStyle(ctx.theme), {
-      position: 'relative', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: px(14),
-      backgroundImage: bg ? 'url(' + bg + ')' : undefined, backgroundSize: 'cover', backgroundPosition: 'center', padding: px(20)
-    });
-    var overlay = light ? '<div style="' + styleStr({ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)' }) + '"></div>' : '';
-    var inner = '<div style="' + styleStr({ position: 'relative', display: 'flex', flexDirection: 'column', gap: px(10) }) + '">' +
-      '<div style="' + styleStr({ fontSize: px(12), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'judul_acara', 'The Wedding Of')) + '</div>' +
-      '<div style="' + styleStr({ fontFamily: ctx.theme.fonts.display, fontSize: px(26), lineHeight: 1.15, color: light ? '#fff' : ctx.theme.palette.ink }) + '">' +
-        escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_1', 'Bagas')) + ' &amp; ' + escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_2', 'Larasati')) + '</div>' +
-      '<div style="' + styleStr({ fontSize: px(13), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'guest_name', 'Bapak/Ibu/Saudara/i Tamu Undangan')) + '</div>' +
-      pillHtml(ctx, fieldVal(ctx, 'teks_tombol_buka', 'Buka Undangan')) +
-      '</div>';
-    return '<div style="' + styleStr(shell) + '">' + overlay + inner + '</div>';
-  }
-
-  function heroBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'overlay');
-    var bg = fieldVal(ctx, 'foto_background_halaman_awal', '');
-    var light = layout === 'overlay' && bg;
-    var shell = Object.assign(blockShellStyle(ctx.theme), {
-      position: 'relative', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: px(6),
-      backgroundImage: bg ? 'url(' + bg + ')' : undefined, backgroundSize: 'cover', backgroundPosition: 'center', padding: px(16)
-    });
-    var overlay = light ? '<div style="' + styleStr({ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)' }) + '"></div>' : '';
-    var inner = '<div style="' + styleStr({ position: 'relative', display: 'flex', flexDirection: 'column', gap: px(6) }) + '">' +
-      '<div style="' + styleStr({ fontSize: px(12), letterSpacing: px(1), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'judul_acara', 'The Wedding Of')) + '</div>' +
-      '<div style="' + styleStr({ fontFamily: ctx.theme.fonts.display, fontSize: px(30), lineHeight: 1.15, color: light ? '#fff' : ctx.theme.palette.ink }) + '">' +
-        escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_1', 'Bagas')) + ' &amp; ' + escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_2', 'Larasati')) + '</div>' +
-      '<div style="' + styleStr({ fontSize: px(13), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'tanggal_acara_cover', '12 . 06 . 2027')) + '</div>' +
-      '</div>';
-    return '<div style="' + styleStr(shell) + '">' + overlay + inner + '</div>';
-  }
-
-  // Static visual fidelity only (see the file header) - the numbers are
-  // computed once at render time, same as ze-designer's own canvas preview
-  // (also render-time only, no ticking); a real guest page's live countdown
-  // is assets/engine.js's job for .dc.html templates today.
-  // The numbers below are the first-paint value only (computed once, same
-  // as before) - render() appends a small ticking script (countdownScript)
-  // that reads data-zd-cd-target off the shell and rewrites each
-  // data-zd-cd-unit digit every second. ze-designer's own canvas preview
-  // stays render-time-only on purpose (see NodeContent.tsx) - only a guest
-  // page needs to actually tick.
-  function countdownBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'digits');
-    var remaining = countdownRemaining(ctx.data.countdownDatetime);
-    var units = [
-      { key: 'd', value: remaining.d, label: fieldVal(ctx, 'teks_countdown_hari', 'Hari') },
-      { key: 'h', value: remaining.h, label: fieldVal(ctx, 'teks_countdown_jam', 'Jam') },
-      { key: 'm', value: remaining.m, label: fieldVal(ctx, 'teks_countdown_menit', 'Menit') },
-      { key: 's', value: remaining.s, label: fieldVal(ctx, 'teks_countdown_detik', 'Detik') }
-    ];
-    var cellsHtml = units.map(function (unit) {
-      var cellStyle = {
-        flex: 1, maxWidth: px(78), textAlign: 'center', padding: '10px 4px', borderRadius: px(ctx.theme.radius),
-        background: layout === 'digits' ? ctx.theme.palette.surface : 'transparent',
-        border: layout === 'digits' ? '1px solid ' + ctx.theme.palette.line : '1px solid transparent'
-      };
-      var numStyle = { fontFamily: ctx.theme.fonts.display, fontSize: px(26), lineHeight: 1.1, color: ctx.theme.palette.accent, fontVariantNumeric: 'tabular-nums' };
-      var labelStyle = { fontSize: px(10), color: ctx.theme.palette.inkSoft };
-      var cdTarget = escapeHtml(String(ctx.data.countdownDatetime || ''));
-      return '<div style="' + styleStr(cellStyle) + '"><div data-zd-cd-unit="' + unit.key + '" data-zd-cd-target="' + cdTarget + '" style="' + styleStr(numStyle) + '">' + String(unit.value).padStart(2, '0') + '</div><div style="' + styleStr(labelStyle) + '">' + escapeHtml(unit.label) + '</div></div>';
-    }).join('');
-    var shell = Object.assign(blockShellStyle(ctx.theme), { justifyContent: 'center' });
-    return '<div style="' + styleStr(shell) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_countdown_1', 'Menuju Hari Bahagia')) +
-      '<div style="' + styleStr({ display: 'flex', gap: px(8), justifyContent: 'center' }) + '">' + cellsHtml + '</div></div>';
-  }
-
-  function coupleBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'split');
-    var couple = ctx.data.couple || [];
-    if (couple.length === 0) return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + emptyHintHtml(ctx, 'Data mempelai kosong') + '</div>';
-    var isSplit = layout === 'split';
-    var peopleHtml = couple.map(function (person) {
-      var wrapStyle = { flex: 1, minWidth: 0, display: 'flex', flexDirection: isSplit ? 'column' : 'row', alignItems: 'center', gap: px(8), textAlign: isSplit ? 'center' : 'left' };
-      var photoSize = isSplit ? 74 : 56;
-      var photoStyle = { width: px(photoSize), height: px(photoSize), flexShrink: 0, borderRadius: '50%', overflow: 'hidden', border: '2px solid ' + ctx.theme.palette.accent, background: ctx.theme.palette.surface };
-      var img = person.foto
-        ? '<img src="' + escapeHtml(person.foto) + '" alt="' + escapeHtml(person.nama || '') + '" draggable="false" style="' + styleStr({ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }) + '">'
-        : '';
-      var nameStyle = { fontFamily: ctx.theme.fonts.display, fontSize: px(15), lineHeight: 1.25, color: ctx.theme.palette.ink };
-      return '<div style="' + styleStr(wrapStyle) + '"><div style="' + styleStr(photoStyle) + '">' + img + '</div>' +
-        '<div style="' + styleStr({ minWidth: 0 }) + '"><div style="' + styleStr(nameStyle) + '">' + escapeHtml(person.nama || '') + '</div>' + captionHtml(ctx, person.ortu) + '</div></div>';
-    }).join('');
-    var rowStyle = { flex: 1, minHeight: 0, display: 'flex', flexDirection: isSplit ? 'row' : 'column', gap: px(12) };
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_profil_1', 'Mempelai')) +
-      '<div style="' + styleStr(rowStyle) + '">' + peopleHtml + '</div></div>';
-  }
-
-  function eventsBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'cards');
-    var events = ctx.data.events || [];
-    if (events.length === 0) return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + emptyHintHtml(ctx, 'Belum ada acara') + '</div>';
-    var isTimeline = layout === 'timeline';
-    var itemsHtml = events.map(function (event) {
-      var railHtml = isTimeline
-        ? '<div style="' + styleStr({ display: 'flex', flexDirection: 'column', alignItems: 'center' }) + '">' +
-          '<span style="' + styleStr({ width: px(8), height: px(8), borderRadius: '50%', background: ctx.theme.palette.accent, marginTop: px(5) }) + '"></span>' +
-          '<span style="' + styleStr({ flex: 1, width: px(1), background: ctx.theme.palette.line }) + '"></span></div>'
-        : '';
-      var cardStyleObj = cardStyle(ctx, Object.assign({ flex: 1 }, isTimeline ? { border: 'none', padding: '2px 0' } : {}));
-      // A real href turns the badge into a link (map/.ics), same guard as
-      // eventButtonLinkOverlaysHtml above - an event with no real venue pin
-      // stays a plain, inert badge rather than a dead link.
-      var mapHref = hasRealMapHref(event) ? event.map_href : null;
-      var calHref = buildIcsDataUri(event);
-      var mapTag = mapHref ? 'a' : 'span';
-      var calTag = calHref ? 'a' : 'span';
-      var badgeBaseStyle = { fontSize: px(10), padding: '3px 8px', borderRadius: px(999), textDecoration: 'none', display: 'inline-block' };
-      var badgesHtml = '<div style="' + styleStr({ display: 'flex', gap: px(6), marginTop: px(6) }) + '">' +
-        '<' + mapTag + (mapHref ? ' href="' + escapeHtml(mapHref) + '" target="_blank" rel="noopener"' : '') +
-          ' style="' + styleStr(Object.assign({}, badgeBaseStyle, { border: '1px solid ' + ctx.theme.palette.accent, color: ctx.theme.palette.accent })) + '">' +
-          escapeHtml(fieldVal(ctx, 'teks_buka_peta', 'Buka Peta')) + '</' + mapTag + '>' +
-        '<' + calTag + (calHref ? ' href="' + escapeHtml(calHref) + '"' : '') +
-          ' style="' + styleStr(Object.assign({}, badgeBaseStyle, { border: '1px solid ' + ctx.theme.palette.line, color: ctx.theme.palette.inkSoft })) + '">' +
-          escapeHtml(fieldVal(ctx, 'teks_tambah_ke_kalender', '+ Kalender')) + '</' + calTag + '></div>';
-      var cardInner = '<div style="' + styleStr({ fontWeight: 600, fontSize: px(12), color: ctx.theme.palette.ink }) + '">' + escapeHtml(event.nama_acara || '') + '</div>' +
-        captionHtml(ctx, event.keterangan) + captionHtml(ctx, event.venue) + badgesHtml;
-      return '<div style="' + styleStr({ display: 'flex', gap: px(8) }) + '">' + railHtml + '<div style="' + styleStr(cardStyleObj) + '">' + cardInner + '</div></div>';
-    }).join('');
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_jadwal_1', 'Jadwal')) +
-      '<div style="' + styleStr(scrollAreaStyle()) + '">' + itemsHtml + '</div></div>';
-  }
-
-  function quotesBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'plain');
-    var quotes = ctx.data.quotes || [];
-    if (quotes.length === 0) return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + emptyHintHtml(ctx, 'Belum ada kutipan') + '</div>';
-    var itemsHtml = quotes.map(function (quote) {
-      var body = '<div style="' + styleStr({ textAlign: 'center' }) + '">' +
-        '<div style="' + styleStr({ fontFamily: ctx.theme.fonts.display, fontSize: px(13), lineHeight: 1.6, fontStyle: 'italic', color: ctx.theme.palette.ink }) + '">“' + escapeHtml(quote.isi_quote || '') + '”</div>' +
-        '<div style="' + styleStr({ marginTop: px(6), fontSize: px(11), fontWeight: 600, color: ctx.theme.palette.accent }) + '">' + escapeHtml(quote.sumber_quote || '') + '</div></div>';
-      return layout === 'card' ? '<div style="' + styleStr(cardStyle(ctx)) + '">' + body + '</div>' : '<div>' + body + '</div>';
-    }).join('');
-    var shell = Object.assign(blockShellStyle(ctx.theme), { justifyContent: 'center' });
-    return '<div style="' + styleStr(shell) + '">' + '<div style="' + styleStr(scrollAreaStyle()) + '">' + itemsHtml + '</div></div>';
-  }
-
-  function loveStoryBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'timeline');
-    var loveStory = ctx.data.loveStory || [];
-    if (loveStory.length === 0) return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + emptyHintHtml(ctx, 'Belum ada kisah') + '</div>';
-    var isTimeline = layout === 'timeline';
-    var itemsHtml = loveStory.map(function (story) {
-      var railHtml = isTimeline
-        ? '<div style="' + styleStr({ display: 'flex', flexDirection: 'column', alignItems: 'center' }) + '">' +
-          '<span style="' + styleStr({ width: px(7), height: px(7), borderRadius: '50%', background: ctx.theme.palette.accent, marginTop: px(5) }) + '"></span>' +
-          '<span style="' + styleStr({ flex: 1, width: px(1), background: ctx.theme.palette.line }) + '"></span></div>'
-        : '';
-      var body = '<div style="' + styleStr({ flex: 1, minWidth: 0 }) + '">' +
-        '<div style="' + styleStr({ fontWeight: 600, fontSize: px(12), color: ctx.theme.palette.ink }) + '">' + escapeHtml(story.judul_cerita || '') + '</div>' +
-        captionHtml(ctx, story.isi_cerita) + '</div>';
-      return '<div style="' + styleStr({ display: 'flex', gap: px(8) }) + '">' + railHtml + body + '</div>';
-    }).join('');
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_love_story_1', 'Kisah')) +
-      '<div style="' + styleStr(scrollAreaStyle()) + '">' + itemsHtml + '</div></div>';
-  }
-
-  // Unlike quotes/gallery/love-story, this isn't a repeating list the
-  // organiser grows - the six points are always-present field keys, not
-  // mapped from ctx.data (see HealthProtocolBlock.tsx's own comment).
-  function healthProtocolBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'grid');
-    var points = [
-      fieldVal(ctx, 'teks_pakai_masker', 'Mengenakan masker'),
-      fieldVal(ctx, 'teks_cuci_tangan', 'Mencuci tangan'),
-      fieldVal(ctx, 'teks_pakai_sabun', 'Menggunakan sabun'),
-      fieldVal(ctx, 'teks_pakai_sanitizer', 'Menggunakan hand sanitizer'),
-      fieldVal(ctx, 'teks_hindari_kerumunan', 'Menghindari kerumunan'),
-      fieldVal(ctx, 'teks_tidak_jabat_tangan', 'Tidak berjabat tangan')
-    ];
-    var isGrid = layout === 'grid';
-    var listStyle = { display: isGrid ? 'grid' : 'flex', flexDirection: layout === 'list' ? 'column' : undefined, gridTemplateColumns: isGrid ? 'repeat(2, 1fr)' : undefined, gap: px(6) };
-    var itemsHtml = points.map(function (point) {
-      return '<div style="' + styleStr({ display: 'flex', alignItems: 'center', gap: px(6) }) + '">' +
-        '<span style="' + styleStr({ width: px(5), height: px(5), flexShrink: 0, borderRadius: '50%', background: ctx.theme.palette.accent }) + '"></span>' +
-        '<span style="' + styleStr({ fontSize: px(11), color: ctx.theme.palette.ink }) + '">' + escapeHtml(point) + '</span></div>';
-    }).join('');
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_protokol_1', 'Protokol Kesehatan')) +
-      '<div style="' + styleStr(listStyle) + '">' + itemsHtml + '</div></div>';
-  }
-
-  function envelopeBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'list');
-    var envelope = ctx.data.envelope || [];
-    if (envelope.length === 0) return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + emptyHintHtml(ctx, 'Belum ada rekening') + '</div>';
-    var isGrid = layout === 'grid';
-    var listStyle = { flex: 1, minHeight: 0, overflowY: 'auto', display: isGrid ? 'grid' : 'flex', flexDirection: isGrid ? undefined : 'column', gridTemplateColumns: isGrid ? 'repeat(2, 1fr)' : undefined, gap: px(6), alignContent: 'start' };
-    var itemsHtml = envelope.map(function (account) {
-      return '<div style="' + styleStr(cardStyle(ctx, { padding: px(8) })) + '">' +
-        '<div style="' + styleStr({ fontSize: px(11), fontWeight: 700, color: ctx.theme.palette.accent }) + '">' + escapeHtml(account.nama_bank || '') + '</div>' +
-        '<div style="' + styleStr({ fontSize: px(13), letterSpacing: px(1), fontVariantNumeric: 'tabular-nums', color: ctx.theme.palette.ink }) + '">' + escapeHtml(account.no_rekening || '') + '</div>' +
-        captionHtml(ctx, account.nama_pemilik_rekening) + '</div>';
-    }).join('');
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_hadiah', 'Amplop Digital')) + captionHtml(ctx, fieldVal(ctx, 'teks_keterangan_hadiah', '')) +
-      '<div style="' + styleStr(listStyle) + '">' + itemsHtml + '</div></div>';
-  }
-
-  /** One Hadir/Tidak Hadir toggle button. The on/off colors are baked into
-   *  data attributes (not a stylesheet class) so rsvpScript below can swap
-   *  them on click without needing to know this theme's palette itself -
-   *  same "server computes styles, client just toggles them" split as the
-   *  rest of this file's inline-style approach. */
-  function attendButtonHtml(ctx, eventName, attend, selected, label) {
-    var onStyle = { background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk, borderColor: ctx.theme.palette.accent };
-    var offStyle = { background: 'transparent', color: ctx.theme.palette.inkSoft, borderColor: ctx.theme.palette.line };
-    var base = { flex: 1, textAlign: 'center', fontSize: px(11), padding: '8px 6px', borderRadius: px(ctx.theme.radius), border: '1px solid', cursor: 'pointer', fontFamily: 'inherit' };
-    var current = Object.assign({}, base, selected ? onStyle : offStyle);
-    return '<button type="button" data-zd-attend-btn data-zd-attend="' + attend + '" data-zd-selected="' + (selected ? '1' : '0') + '"' +
-      ' data-zd-bg-on="' + escapeHtml(onStyle.background) + '" data-zd-color-on="' + escapeHtml(onStyle.color) + '" data-zd-border-on="' + escapeHtml(onStyle.borderColor) + '"' +
-      ' data-zd-bg-off="' + escapeHtml(offStyle.background) + '" data-zd-color-off="' + escapeHtml(offStyle.color) + '" data-zd-border-off="' + escapeHtml(offStyle.borderColor) + '"' +
-      ' style="' + styleStr(current) + '">' + escapeHtml(label) + '</button>';
-  }
-
-  /** One Dewasa/Anak number stepper - a native <input type=number>, not the
-   *  .dc.html version's custom +/- buttons (the browser's own stepper does
-   *  the same job for free). `max` is a cosmetic hint only: the server
-   *  (clampEventRsvp, src/worker.js) is the real authority and re-clamps
-   *  every submission regardless of what the client sends. */
-  function rsvpCountFieldHtml(ctx, attr, label, value, max) {
-    var labelStyle = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: px(4), fontSize: px(10), letterSpacing: px(1), textTransform: 'uppercase', color: ctx.theme.palette.inkSoft };
-    var inputStyle = { width: '100%', boxSizing: 'border-box', padding: '8px', background: ctx.theme.palette.surface, border: '1px solid ' + ctx.theme.palette.line, borderRadius: px(ctx.theme.radius), color: ctx.theme.palette.ink, fontSize: px(13), textAlign: 'center' };
-    return '<label style="' + styleStr(labelStyle) + '">' + escapeHtml(label) +
-      '<input type="number" inputmode="numeric" min="0"' + (max != null ? ' max="' + Number(max) + '"' : '') +
-      ' value="' + Number(value || 0) + '" ' + attr + ' style="' + styleStr(inputStyle) + '"></label>';
-  }
-
-  // Real per-event attendance form, submitting to the same
-  // PUT /api/invitations/:slug/guests/:guestId/rsvp endpoint the .dc.html
-  // pipeline's own React components use (assets/engine.js's RSVP submission
-  // is otherwise untouched). Deliberately simplified vs. that pipeline: no
-  // "Ubah Konfirmasi" read-only-summary/edit-toggle state (this always shows
-  // the editable form, pre-filled from any existing response, so resubmitting
-  // just updates it) and no custom RSVP questions (rsvp_answers) - neither
-  // has a zedoc block yet. ponytail: add those if a template actually needs
-  // them; the endpoint already accepts rsvp_answers today.
-  function rsvpBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'card');
-    var slug = ctx.data.slug || '';
-    var guestId = ctx.data.guestId || '';
-    var guestName = ctx.data.guestName || '';
-    var quotaMap = ctx.data.guestEventQuota || {};
-    var rsvpMap = ctx.data.guestEventRsvp || {};
-    var invited = ctx.data.guestInvitedEvents;
-    var events = (ctx.data.events || []).filter(function (ev) {
-      return !Array.isArray(invited) || !invited.length || invited.indexOf(ev.nama_acara) !== -1;
-    });
-
-    var nameLine = guestName
-      ? '<div style="' + styleStr({ fontSize: px(15), fontWeight: 600, color: ctx.theme.palette.ink }) + '">' + escapeHtml(guestName) + '</div>'
-      : captionHtml(ctx, 'Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.');
-
-    var cardsHtml = events.map(function (ev) {
-      var name = ev.nama_acara || '';
-      // Only an event the organizer actually set a quota for gets counted -
-      // same rsvpShowInputs/rsvpUntracked split as assets/engine.js, without
-      // porting its full isDemoRsvp/quota-mode branching (server clamps the
-      // real numbers regardless of what this form shows).
-      var quota = quotaMap[name];
-      var showInputs = !!quota;
-      var prevR = rsvpMap[name];
-      var hasResponded = !!prevR;
-      var attending = !hasResponded || (prevR.dewasa || 0) > 0 || (prevR.anak || 0) > 0;
-      var prefillDewasa = (prevR && prevR.dewasa) || 0;
-      var prefillAnak = (prevR && prevR.anak) || 0;
-      var maxDewasa = quota && quota.dewasa != null ? quota.dewasa : null;
-      var maxAnak = quota && quota.anak != null ? quota.anak : null;
-
-      var info = captionHtml(ctx, [ev.keterangan, ev.venue].filter(Boolean).join(' · '));
-      var inner;
-      if (showInputs) {
-        var toggle = '<div style="' + styleStr({ display: 'flex', gap: px(6) }) + '">' +
-          attendButtonHtml(ctx, name, 'yes', attending, fieldVal(ctx, 'teks_pilihan_hadir', 'Hadir')) +
-          attendButtonHtml(ctx, name, 'no', !attending, fieldVal(ctx, 'teks_pilihan_tidak_hadir', 'Tidak Hadir')) + '</div>';
-        var counts = '<div data-zd-counts style="' + styleStr({ display: attending ? 'flex' : 'none', gap: px(10) }) + '">' +
-          rsvpCountFieldHtml(ctx, 'data-zd-rsvp-dewasa', 'Dewasa', prefillDewasa, maxDewasa) +
-          rsvpCountFieldHtml(ctx, 'data-zd-rsvp-anak', 'Anak', prefillAnak, maxAnak) + '</div>';
-        inner = toggle + counts;
-      } else {
-        inner = captionHtml(ctx, 'Kehadiran Anda di acara ini sudah kami catat, tidak perlu konfirmasi jumlah tamu.');
-      }
-      return '<div data-zd-rsvp-card="' + escapeHtml(name) + '" data-zd-show-inputs="' + (showInputs ? '1' : '0') + '" style="' +
-        styleStr(cardStyle(ctx, { display: 'flex', flexDirection: 'column', gap: px(8) })) + '">' +
-        '<div style="' + styleStr({ fontWeight: 600, fontSize: px(13), color: ctx.theme.palette.ink }) + '">' + escapeHtml(name) + '</div>' +
-        info + inner + '</div>';
-    }).join('');
-
-    var submitBtn = '<button type="button" id="zd-rsvp-submit" style="' + styleStr({
-      marginTop: px(4), padding: '10px', border: 'none', borderRadius: px(999), cursor: 'pointer',
-      background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk, fontSize: px(11), fontWeight: 600
-    }) + '">' + escapeHtml(fieldVal(ctx, 'teks_tombol_konfirmasi', 'Kirim Konfirmasi')) + '</button>';
-    var statusLine = '<div id="zd-rsvp-status" style="' + styleStr({ fontSize: px(11), color: ctx.theme.palette.inkSoft, minHeight: px(14) }) + '"></div>';
-
-    var body = '<div data-zd-rsvp-slug="' + escapeHtml(slug) + '" data-zd-rsvp-guest="' + escapeHtml(guestId) + '" style="' +
-      styleStr({ display: 'flex', flexDirection: 'column', gap: px(10) }) + '">' + nameLine +
-      (events.length ? cardsHtml + submitBtn + statusLine : captionHtml(ctx, 'Belum ada acara')) + '</div>';
-    var shell = Object.assign(blockShellStyle(ctx.theme), { justifyContent: 'center' });
-    return '<div style="' + styleStr(shell) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_rsvp', 'Konfirmasi Kehadiran')) +
-      (layout === 'card' ? '<div style="' + styleStr(cardStyle(ctx)) + '">' + body + '</div>' : body) + '</div>';
-  }
-
-  // Real wish/guestbook submission, POSTing to the same
-  // /api/invitations/:slug/wishes endpoint assets/engine.js's own wish-form
-  // uses. No pagination (wishesBlockHtml never had it, keeping parity).
-  function wishesBlockHtml(node, ctx) {
-    var showForm = blockOption(node, 'showForm', true);
-    var wishes = ctx.data.wishes || [];
-    var slug = ctx.data.slug || '';
-    var guestName = ctx.data.guestName || '';
-
-    var itemStyle = styleStr(cardStyle(ctx, { padding: px(8) }));
-    var headStyle = styleStr({ display: 'flex', justifyContent: 'space-between', gap: px(6), fontSize: px(11), fontWeight: 600 });
-    var nameStyle = styleStr({ color: ctx.theme.palette.ink });
-    var timeStyle = styleStr({ color: ctx.theme.palette.inkSoft, fontWeight: 400 });
-    var captionStyle = styleStr({ fontSize: px(11), lineHeight: 1.5, color: ctx.theme.palette.inkSoft });
-
-    var nameFieldHtml = guestName
-      ? '<input type="hidden" id="zd-wish-name" value="' + escapeHtml(guestName) + '">' +
-        '<div style="' + styleStr({ fontSize: px(11), color: ctx.theme.palette.inkSoft }) + '">' + escapeHtml(guestName) + '</div>'
-      : '<input type="text" id="zd-wish-name" placeholder="Nama Anda" style="' +
-        styleStr({ padding: px(8), background: ctx.theme.palette.surface, border: '1px solid ' + ctx.theme.palette.line, borderRadius: px(ctx.theme.radius), color: ctx.theme.palette.ink, fontSize: px(11) }) + '">';
-    var formHtml = showForm
-      ? '<div data-zd-wish-slug="' + escapeHtml(slug) + '" style="' + styleStr({ display: 'flex', flexDirection: 'column', gap: px(6) }) + '">' +
-        nameFieldHtml +
-        '<textarea id="zd-wish-message" rows="2" placeholder="' + escapeHtml(fieldVal(ctx, 'teks_placeholder_ucapan', 'Tulis ucapan Anda…')) + '" style="' +
-          styleStr({ padding: px(8), background: ctx.theme.palette.surface, border: '1px solid ' + ctx.theme.palette.line, borderRadius: px(ctx.theme.radius), color: ctx.theme.palette.ink, fontSize: px(11), resize: 'vertical' }) + '"></textarea>' +
-        '<button type="button" id="zd-wish-submit" style="' + styleStr({
-          alignSelf: 'flex-start', padding: '7px 16px', border: 'none', borderRadius: px(999), cursor: 'pointer',
-          background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk, fontSize: px(11), fontWeight: 600
-        }) + '">' + escapeHtml(fieldVal(ctx, 'teks_tombol_kirim_ucapan', 'Kirim Ucapan')) + '</button>' +
-        '<div id="zd-wish-status" style="' + styleStr({ fontSize: px(11), color: ctx.theme.palette.inkSoft, minHeight: px(14) }) + '"></div></div>'
-      : '';
-    var itemsHtml = wishes.map(function (wish) {
-      var head = '<div style="' + headStyle + '">' +
-        '<span style="' + nameStyle + '">' + escapeHtml(wish.name || '') + '</span>' +
-        '<span style="' + timeStyle + '">' + escapeHtml(wish.time || '') + '</span></div>';
-      return '<div style="' + itemStyle + '">' + head + captionHtml(ctx, wish.message) + '</div>';
-    }).join('');
-    var listHtml = '<div id="zd-wishes-list" data-zd-item-style="' + escapeHtml(itemStyle) + '" data-zd-head-style="' + escapeHtml(headStyle) +
-      '" data-zd-name-style="' + escapeHtml(nameStyle) + '" data-zd-time-style="' + escapeHtml(timeStyle) + '" data-zd-caption-style="' + escapeHtml(captionStyle) +
-      '" style="' + styleStr(scrollAreaStyle()) + '">' + itemsHtml + '</div>';
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_wish', 'Ucapan & Doa')) + formHtml + listHtml + '</div>';
-  }
-
-  function videoBlockHtml(node, ctx) {
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + placeholderHtml(ctx, iconPlaySvg(ctx.theme.palette.accent), 'Video YouTube') + '</div>';
-  }
-
-  function liveStreamBlockHtml(node, ctx) {
-    var shell = Object.assign(blockShellStyle(ctx.theme), { justifyContent: 'center' });
-    return '<div style="' + styleStr(shell) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_live_streaming', 'Live Streaming')) + captionHtml(ctx, fieldVal(ctx, 'teks_keterangan_live_streaming', '')) +
-      '<div style="' + styleStr({ textAlign: 'center' }) + '">' + pillHtml(ctx, fieldVal(ctx, 'teks_tombol_bergabung', 'Bergabung Sekarang')) + '</div>' +
-      placeholderHtml(ctx, iconRadioSvg(ctx.theme.palette.accent), 'Pratinjau siaran') + '</div>';
-  }
-
-  function mapBlockHtml(node, ctx) {
-    var venue = ((ctx.data.events || [])[0] || {}).venue || '';
-    return '<div style="' + styleStr(blockShellStyle(ctx.theme)) + '">' + placeholderHtml(ctx, iconMapPinSvg(ctx.theme.palette.accent), 'Peta lokasi') + (venue ? captionHtml(ctx, venue) : '') + '</div>';
-  }
-
-  function musicBlockHtml(node, ctx) {
-    var shell = Object.assign(blockShellStyle(ctx.theme), { alignItems: 'center', justifyContent: 'center', gap: px(6) });
-    var circle = '<div style="' + styleStr({ width: px(40), height: px(40), borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk }) + '">' + iconMusicSvg(ctx.theme.palette.accentInk) + '</div>';
-    return '<div style="' + styleStr(shell) + '">' + circle + captionHtml(ctx, 'Musik latar') + '</div>';
-  }
-
-  function sendGiftBlockHtml(node, ctx) {
-    var shell = Object.assign(blockShellStyle(ctx.theme), { justifyContent: 'center' });
-    var cardInner = '<div style="' + styleStr({ fontSize: px(12), fontWeight: 600 }) + '">' + escapeHtml(fieldVal(ctx, 'nama_penerima_kado', '')) + '</div>' + captionHtml(ctx, fieldVal(ctx, 'alamat_pengiriman_kado', ''));
-    // A real wa.me (or any) link the organizer set turns the pill into an
-    // actual link, same "real link vs inert placeholder" pattern as the map/
-    // calendar badges in eventsBlockHtml - matches templates/*.dc.html's own
-    // <a data-field-href="link_konfirmasi_wa"> for this exact button.
-    var waHref = linkVal(ctx, 'link_konfirmasi_wa');
-    var waTag = waHref ? 'a' : 'span';
-    var waBtn = '<' + waTag + (waHref ? ' href="' + escapeHtml(waHref) + '" target="_blank" rel="noopener"' : '') + ' style="' + styleStr({
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
-      background: ctx.theme.palette.accent, color: ctx.theme.palette.accentInk,
-      borderRadius: px(999), padding: '6px 14px', fontSize: px(11), fontWeight: 600
-    }) + '">' + escapeHtml(fieldVal(ctx, 'teks_tombol_konfirmasi_wa', 'Konfirmasi via WhatsApp')) + '</' + waTag + '>';
-    return '<div style="' + styleStr(shell) + '">' + headingHtml(ctx, fieldVal(ctx, 'teks_judul_pengiriman_kado', 'Kirim Kado')) +
-      '<div style="' + styleStr(cardStyle(ctx)) + '">' + cardInner + '</div>' +
-      '<div style="' + styleStr({ textAlign: 'center' }) + '">' + waBtn + '</div></div>';
-  }
-
-  function closingBlockHtml(node, ctx) {
-    var layout = blockOption(node, 'layout', 'overlay');
-    var bg = fieldVal(ctx, 'foto_background_thankyou', '');
-    var light = layout === 'overlay' && bg;
-    var extra = fieldVal(ctx, 'tambahan_thank_you_section', '');
-    var shell = Object.assign(blockShellStyle(ctx.theme), {
-      position: 'relative', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: px(8),
-      backgroundImage: bg ? 'url(' + bg + ')' : undefined, backgroundSize: 'cover', backgroundPosition: 'center', padding: px(16)
-    });
-    var overlay = light ? '<div style="' + styleStr({ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)' }) + '"></div>' : '';
-    var inner = '<div style="' + styleStr({ position: 'relative', display: 'flex', flexDirection: 'column', gap: px(6) }) + '">' +
-      '<div style="' + styleStr({ fontFamily: ctx.theme.fonts.display, fontSize: px(22), lineHeight: 1.2, color: light ? '#fff' : ctx.theme.palette.ink }) + '">' + escapeHtml(fieldVal(ctx, 'teks_terima_kasih', 'Terima Kasih')) + '</div>' +
-      (extra ? '<div style="' + styleStr({ fontSize: px(12), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(extra) + '</div>' : '') +
-      '<div style="' + styleStr({ fontFamily: ctx.theme.fonts.display, fontSize: px(16), color: light ? '#fff' : ctx.theme.palette.accent }) + '">' +
-        escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_1', 'Bagas')) + ' &amp; ' + escapeHtml(fieldVal(ctx, 'nama_panggilan_mempelai_2', 'Larasati')) + '</div>' +
-      '<div style="' + styleStr({ fontSize: px(11), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'teks_keluarga_besar', 'Kami yang berbahagia')) + '</div>' +
-      '<div style="' + styleStr({ fontSize: px(11), color: light ? '#fff' : ctx.theme.palette.inkSoft }) + '">' + escapeHtml(fieldVal(ctx, 'ortu_kedua_mempelai', '')) + '</div>' +
-      '</div>';
-    return '<div style="' + styleStr(shell) + '">' + overlay + inner + '</div>';
-  }
-
-  var BLOCK_RENDERERS = {
-    opening: openingBlockHtml,
-    hero: heroBlockHtml,
-    countdown: countdownBlockHtml,
-    couple: coupleBlockHtml,
-    events: eventsBlockHtml,
-    gallery: galleryBlockHtml,
-    quotes: quotesBlockHtml,
-    'love-story': loveStoryBlockHtml,
-    envelope: envelopeBlockHtml,
-    'send-gift': sendGiftBlockHtml,
-    'health-protocol': healthProtocolBlockHtml,
-    rsvp: rsvpBlockHtml,
-    wishes: wishesBlockHtml,
-    video: videoBlockHtml,
-    'live-streaming': liveStreamBlockHtml,
-    map: mapBlockHtml,
-    music: musicBlockHtml,
-    closing: closingBlockHtml
-  };
 
   // Every zedoc-builder catalog template (scripts/zedoc-builder/build-*.mjs)
   // hand-authors a Rangkaian Acara card's button row as an 'Event buttons'
@@ -968,12 +374,6 @@
           children: [{ tag: 'div', style: attendSelected ? onStyle : offStyle }]
         };
       }
-      case 'block': {
-        var renderer = BLOCK_RENDERERS[node.block];
-        if (!renderer) return { raw: '' };
-        view.children = [{ raw: renderer(node, ctx) }];
-        return;
-      }
       case 'group': {
         // "Wish name input"/"Wish message input" are a decorative background
         // shape + a static placeholder text, same hand-drawn convention as
@@ -1040,8 +440,7 @@
         // "RSVP submit button"/"Wish submit button"/"WhatsApp button"/"Join
         // button" - the same hand-drawn convention, matched purely by name
         // (ZeDocCore.GUEST_ROLES) since none of the catalog
-        // templates use the drag-in `rsvp`/`wishes`/`sendGift` Block components
-        // these buttons would otherwise come from (see BLOCK_RENDERERS below).
+        // templates have a generic RSVP/wishes/gift component.
         function plainChildren() {
           var kids = ZeDocCore.childViews(node.children, gctx, o.path);
           if (overlays) kids.push({ raw: overlays });
@@ -1349,10 +748,10 @@
     // Font just 404s here harmlessly, same risk profile as before.
     var fontFamilies = collectFontFamilies(doc);
 
-    // Ticks every data-zd-cd-unit digit (countdownBlockHtml and
-    // decorateText's 'Countdown number N' override both stamp these,
-    // reading target/unit straight off the element so no shell/grouping is
-    // needed here - a no-op querySelectorAll when a doc has no countdown).
+    // Ticks every data-zd-cd-unit digit (decorateText's 'Countdown number N'
+    // override stamps these), reading target/unit straight off the element so
+    // no shell/grouping is needed here - a no-op querySelectorAll when a doc
+    // has no countdown).
     var countdownScript = 'var cdEls=document.querySelectorAll("[data-zd-cd-unit]");' +
       'if(cdEls.length){var cdTick=function(){cdEls.forEach(function(el){' +
       'var t=new Date(el.getAttribute("data-zd-cd-target")).getTime();if(isNaN(t))return;' +
@@ -1426,8 +825,8 @@
       '})();';
 
     // Fullscreen photo viewer for every [data-zd-gallery-src] image
-    // (ZeDocCore.imageView's gallery-repeat case and galleryBlockHtml both stamp
-    // that attribute) - one delegated click listener rather than a
+    // (ZeDocCore.imageView's gallery-repeat case stamps that attribute) - one
+    // delegated click listener rather than a
     // per-photo inline handler, same "no per-item JS" spirit as the rest of
     // this file's vanilla-JS conventions.
     var lightboxBtnStyle = styleStr({ position: 'fixed', top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,.15)', color: '#fff', border: 'none', borderRadius: '999px', width: px(40), height: px(40), fontSize: px(22), lineHeight: px(40), textAlign: 'center', cursor: 'pointer' });
@@ -1452,75 +851,13 @@
       'document.addEventListener("keydown",function(e){if(lb.style.display!=="flex")return;if(e.key==="Escape")close();if(e.key==="ArrowLeft")openAt(idx-1);if(e.key==="ArrowRight")openAt(idx+1);});' +
       '})();';
 
-    // RSVP attendance toggle/submit + wish submit, both against the same
-    // backend endpoints assets/engine.js's own .dc.html components use
-    // (PUT .../guests/:id/rsvp, POST .../wishes) - a no-op querySelector
-    // wiring when a doc has neither block, same convention as the scripts
-    // above. zdEsc() escapes text before it's stitched into innerHTML for a
-    // freshly-submitted wish, since that text just came from a guest.
-    var rsvpWishScript = '(function(){' +
-      'function zdEsc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}' +
-      'document.addEventListener("click",function(e){' +
-      'var attendBtn=e.target.closest&&e.target.closest("[data-zd-attend-btn]");' +
-      'if(attendBtn){' +
-      'var card=attendBtn.closest("[data-zd-rsvp-card]");if(!card)return;' +
-      'Array.prototype.forEach.call(card.querySelectorAll("[data-zd-attend-btn]"),function(b){' +
-      'var sel=b===attendBtn;b.setAttribute("data-zd-selected",sel?"1":"0");' +
-      'b.style.background=b.getAttribute(sel?"data-zd-bg-on":"data-zd-bg-off");' +
-      'b.style.color=b.getAttribute(sel?"data-zd-color-on":"data-zd-color-off");' +
-      'b.style.borderColor=b.getAttribute(sel?"data-zd-border-on":"data-zd-border-off");});' +
-      'var counts=card.querySelector("[data-zd-counts]");' +
-      'if(counts)counts.style.display=attendBtn.getAttribute("data-zd-attend")==="yes"?"flex":"none";' +
-      'return;}' +
-      'if(e.target.closest&&e.target.closest("#zd-rsvp-submit")){' +
-      'var root=document.querySelector("[data-zd-rsvp-slug]");' +
-      'var slug=root?root.getAttribute("data-zd-rsvp-slug"):"",guestId=root?root.getAttribute("data-zd-rsvp-guest"):"";' +
-      'var status=document.getElementById("zd-rsvp-status");' +
-      'if(!slug||!guestId){if(status)status.textContent="Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.";return;}' +
-      'var payload={};' +
-      'Array.prototype.forEach.call(document.querySelectorAll("[data-zd-rsvp-card]"),function(cd){' +
-      'if(cd.getAttribute("data-zd-show-inputs")!=="1")return;' +
-      'var name=cd.getAttribute("data-zd-rsvp-card");' +
-      'var sel=cd.querySelector("[data-zd-attend-btn][data-zd-selected=\\"1\\"]");' +
-      'var attending=!sel||sel.getAttribute("data-zd-attend")==="yes";' +
-      'if(!attending){payload[name]={dewasa:0,anak:0};return;}' +
-      'var dw=cd.querySelector("[data-zd-rsvp-dewasa]"),an=cd.querySelector("[data-zd-rsvp-anak]");' +
-      'payload[name]={dewasa:Math.max(0,parseInt(dw&&dw.value,10)||0),anak:Math.max(0,parseInt(an&&an.value,10)||0)};});' +
-      'if(status)status.textContent="Mengirim...";' +
-      'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_rsvp:payload})})' +
-      '.then(function(r){if(status)status.textContent=r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.";})' +
-      '.catch(function(){if(status)status.textContent="Gagal mengirim konfirmasi, periksa koneksi Anda.";});' +
-      'return;}' +
-      'if(e.target.closest&&e.target.closest("#zd-wish-submit")){' +
-      'var wroot=document.querySelector("[data-zd-wish-slug]");' +
-      'var wslug=wroot?wroot.getAttribute("data-zd-wish-slug"):"";' +
-      'var wstatus=document.getElementById("zd-wish-status");' +
-      'var msgEl=document.getElementById("zd-wish-message"),nameEl=document.getElementById("zd-wish-name");' +
-      'var message=msgEl?msgEl.value.trim():"";' +
-      'var name=(nameEl?nameEl.value.trim():"")||"Tamu Undangan";' +
-      'if(!message){if(wstatus)wstatus.textContent="Tuliskan ucapan Anda terlebih dahulu.";return;}' +
-      'if(!wslug){if(wstatus)wstatus.textContent="Ucapan tidak dapat dikirim dari pratinjau ini.";return;}' +
-      'if(wstatus)wstatus.textContent="Mengirim...";' +
-      'fetch("/api/invitations/"+encodeURIComponent(wslug)+"/wishes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name,message:message})})' +
-      '.then(function(r){' +
-      'if(!r.ok){if(wstatus)wstatus.textContent=r.status===429?"Anda sudah mencapai batas 3 ucapan & doa.":"Gagal mengirim ucapan, coba lagi.";return;}' +
-      'var list=document.getElementById("zd-wishes-list");' +
-      'if(list){var item=document.createElement("div");' +
-      'item.setAttribute("style",list.getAttribute("data-zd-item-style")||"");' +
-      'item.innerHTML="<div style=\\""+(list.getAttribute("data-zd-head-style")||"")+"\\"><span style=\\""+(list.getAttribute("data-zd-name-style")||"")+"\\">"+zdEsc(name)+"</span><span style=\\""+(list.getAttribute("data-zd-time-style")||"")+"\\">Baru saja</span></div><div style=\\""+(list.getAttribute("data-zd-caption-style")||"")+"\\">"+zdEsc(message)+"</div>";' +
-      'list.insertBefore(item,list.firstChild);}' +
-      'if(msgEl)msgEl.value="";' +
-      'if(wstatus)wstatus.textContent="Terima kasih atas doa dan ucapannya!";})' +
-      '.catch(function(){if(wstatus)wstatus.textContent="Gagal mengirim ucapan, periksa koneksi Anda.";});' +
-      '}});' +
-      '})();';
-
-    // Same RSVP/wish submission as rsvpWishScript above, but for the
-    // hand-drawn catalog templates' zd2-* hooks (decorateNode's 'shape'/
-    // 'group' cases and decorateText's 'attend-label' role).
-    // slug/guestId live on <body> (data-zd2-slug/-guest-id below) since,
-    // unlike the Block-based form, there's no single hand-drawn node to
-    // carry them. Status feedback is the zd2Toast() below, not an inline
+    // RSVP attendance toggle/submit + wish submit against the same backend
+    // endpoints assets/engine.js's own .dc.html components use (PUT
+    // .../guests/:id/rsvp, POST .../wishes), for the hand-drawn catalog
+    // templates' zd2-* hooks (decorateNode's 'shape'/'group' cases and
+    // decorateText's 'attend-label' role).
+    // slug/guestId live on <body> (data-zd2-slug/-guest-id below) since
+    // there's no single hand-drawn node to carry them. Status feedback is the zd2Toast() below, not an inline
     // message line - the hand-drawn templates have no spare decorative node
     // to repurpose as one; upgrade path is picking one more name to match on.
     var handDrawnRsvpWishScript = '(function(){' +
@@ -1681,7 +1018,6 @@
       '})();</script>' +
       '<script>' + textReflowScript + '</script>' +
       '<script>' + lightboxScript + '</script>' +
-      '<script>' + rsvpWishScript + '</script>' +
       '<script>' + handDrawnRsvpWishScript + '</script>' +
       (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
       (musicUrl ? '<script>' + musicScript + '</script>' : '') +

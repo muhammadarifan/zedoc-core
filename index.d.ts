@@ -117,10 +117,6 @@ export interface ViewNode {
   fragment?: ViewNode[]
   /** Trusted markup standing in for the whole view (guest-only pieces). */
   raw?: string
-  /** Something only the host can draw (a block, an icon): it gets the node and its context back. */
-  ext?: 'block'
-  node?: unknown
-  ctx?: unknown
 }
 
 export interface GuestRole {
@@ -204,7 +200,7 @@ declare const core: {
   /** An icon's svg view, or null for a name outside the catalogue. */
   iconSvg(name: string, color: string, strokeWidth: number, style?: StyleObject): ViewNode | null
   iconView(node: { icon: string; strokeWidth: number; color: { kind: string; token?: string; value?: string } }, ctx: ResolveContext): ViewNode | null
-  toHtml(view: ViewNode | string, ext?: (view: ViewNode) => string): string
+  toHtml(view: ViewNode | string): string
   nodeView(node: any, ctx: ResolveContext, o?: { path?: string; y?: number | null; heightGrow?: number }): ViewNode | null
   contentViews(node: any, ctx: ResolveContext, path: string): ViewNode[]
   childViews(nodes: any[], ctx: ResolveContext, path: string): ViewNode[]
