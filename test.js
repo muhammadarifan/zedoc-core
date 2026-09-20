@@ -262,4 +262,13 @@ html = engine.render(docOf([box('r1', { animations: [anim({ trigger: 'reveal' })
 assert.ok(html.includes('data-zd-motion="reveal"') && html.includes('data-zd-gated="1"')) // behind an envelope gate...
 assert.ok(html.includes("window.zdMotionStart&&window.zdMotionStart()")) // ...the gate's click releases it
 
+// --- background music ---------------------------------------------------------------
+html = engine.render(docOf([box('plain')]), { audio: { background_music: '' } })
+assert.ok(!/zd-music|<audio/.test(html)) // no track, no player
+html = engine.render(docOf([box('plain')]), { audio: { background_music: '/images/track"><b.mp3' } })
+assert.ok(html.includes('<audio id="zd-music" loop preload="none" src="/images/track&quot;&gt;&lt;b.mp3">')) // the URL is escaped into the attribute
+assert.ok(html.includes('id="zd-music-btn"') && html.includes('.zd-ring') && html.includes('zd-music-spin'))
+assert.ok(html.includes('right:max(16px, calc(50% - 200px + 16px))')) // sits at the edge of the centred 400px column
+assert.ok(html.includes('document.addEventListener("click",first)')) // starts on the first click/tap
+
 console.log('zedoc-core: ok')

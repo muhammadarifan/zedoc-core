@@ -1558,6 +1558,49 @@
       '}});' +
       '})();';
 
+    // Background music: the couple's uploaded MP3 (data.audio.background_music,
+    // an R2 URL) loops behind the page, with the round play/pause button the
+    // legacy templates had (bottom-right, a dashed ring spinning while it plays).
+    // Nothing is emitted without a URL. It starts on the guest's first click/tap
+    // - the envelope gate's click when there is one - never on load, since a
+    // browser would block that and it must not sound before the invitation is
+    // opened. A guest who paused it keeps it paused; a track that fails to load
+    // hides the button.
+    var musicUrl = data.audio && data.audio.background_music;
+    var musicHtml = '', musicCss = '', musicScript = '';
+    if (musicUrl) {
+      var musicPalette = doc.theme.palette;
+      var musicIcon = function (cls, path) {
+        return '<svg class="' + cls + '" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="position:relative">' + path + '</svg>';
+      };
+      musicHtml = '<audio id="zd-music" loop preload="none" src="' + escapeHtml(musicUrl) + '"></audio>' +
+        '<button id="zd-music-btn" type="button" aria-label="Musik latar" style="' + styleStr({
+          position: 'fixed', bottom: '24px', right: 'max(16px, calc(50% - ' + (stageWidth / 2) + 'px + 16px))', zIndex: 150,
+          width: px(46), height: px(46), padding: 0, border: 'none', borderRadius: '50%', cursor: 'pointer',
+          background: musicPalette.accent, color: musicPalette.accentInk, boxShadow: '0 4px 16px rgba(0,0,0,.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }) + '">' +
+        '<svg class="zd-ring" width="56" height="56" viewBox="0 0 56 56" style="position:absolute;top:-5px;left:-5px;pointer-events:none"><circle cx="28" cy="28" r="26" fill="none" stroke="' + escapeHtml(musicPalette.accent) + '" stroke-width="1" stroke-dasharray="6 9" stroke-linecap="round"/></svg>' +
+        musicIcon('zd-play', '<path d="M4 2.3v11.4c0 .8.88 1.28 1.55.85l9-5.7a1 1 0 0 0 0-1.7l-9-5.7C4.88 1.02 4 1.5 4 2.3z"/>') +
+        musicIcon('zd-pause', '<rect x="3.5" y="2.3" width="3" height="11.4" rx="1"/><rect x="9.5" y="2.3" width="3" height="11.4" rx="1"/>') +
+        '</button>';
+      musicCss = '#zd-music-btn .zd-ring{opacity:0}#zd-music-btn[data-playing] .zd-ring{opacity:1;animation:zd-music-spin 2.4s linear infinite}' +
+        '#zd-music-btn .zd-pause{display:none}#zd-music-btn[data-playing] .zd-play{display:none}#zd-music-btn[data-playing] .zd-pause{display:block}' +
+        '@keyframes zd-music-spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){#zd-music-btn .zd-ring{animation:none!important}}';
+      musicScript = '(function(){var a=document.getElementById("zd-music"),b=document.getElementById("zd-music-btn");if(!a||!b)return;' +
+        'var off=false;' +
+        'function sync(){if(a.paused)b.removeAttribute("data-playing");else b.setAttribute("data-playing","1");}' +
+        'function play(){var p=a.play();if(p&&p.catch)p.catch(function(){});}' +
+        'a.addEventListener("play",sync);a.addEventListener("pause",sync);' +
+        'a.addEventListener("error",function(){b.style.display="none";});' +
+        'b.addEventListener("click",function(){if(a.paused){off=false;play();}else{off=true;a.pause();}});' +
+        'function first(e){if(e.target.closest&&e.target.closest("#zd-music-btn"))return;' +
+        'document.removeEventListener("click",first);document.removeEventListener("touchend",first);' +
+        'if(!off&&a.paused)play();}' +
+        'document.addEventListener("click",first);document.addEventListener("touchend",first);' +
+        '})();';
+    }
+
     // Node animations (ZeDocCore.motionStyle). The keyframes are only emitted
     // for presets the doc uses. While the gate is up the stage's animations are
     // held (body[data-zd-gated]); zdMotionStart releases them - on load with no
@@ -1586,7 +1629,7 @@
       '<link rel="preconnect" href="https://fonts.googleapis.com">' +
       '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       buildFontLinks(fontFamilies) +
-      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' + motionCss + '</style>' +
+      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' + motionCss + musicCss + '</style>' +
       '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '">' +
       '<div id="zd-wrap" style="position:relative;width:100%;overflow:hidden">' +
       '<div id="zd-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(stageWidth), height: px(totalHeight) }) + '">' +
@@ -1594,6 +1637,7 @@
       '</div></div>' +
       gateHtml +
       lightboxHtml +
+      musicHtml +
       '<script>(function(){' +
       'var W=' + stageWidth + ',H=' + totalHeight + ';' +
       'var stage=document.getElementById("zd-stage"),wrap=document.getElementById("zd-wrap");' +
@@ -1607,6 +1651,7 @@
       '<script>' + rsvpWishScript + '</script>' +
       '<script>' + handDrawnRsvpWishScript + '</script>' +
       (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
+      (musicUrl ? '<script>' + musicScript + '</script>' : '') +
       '</body></html>';
   }
 
