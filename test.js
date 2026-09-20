@@ -289,4 +289,46 @@ assert.strictEqual(core.sectionOf({ id: 'x', name: 'Gallery', role: 'side' }), n
 assert.strictEqual(core.sectionOf({ id: 'toString', name: 'constructor' }), null) // never falls through to Object.prototype
 assert.strictEqual(core.sectionOf(null), null)
 
+// --- wizard section switches ------------------------------------------------------------
+const label = (text) => ({
+  id: 't-' + text, name: text, type: 'text', frame: { x: 0, y: 0, w: 200, h: 20, rotate: 0, flipX: false, flipY: false }, opacity: 1, visible: true, locked: false, text: text,
+  style: { font: { kind: 'token', token: 'body' }, size: 12, weight: 400, lineHeight: 1.2, letterSpacing: 0, align: 'left', color: { kind: 'token', token: 'ink' }, italic: false, underline: false, transform: 'none' },
+})
+const part = (section, h) => ({ id: 'ab-' + section, name: section, role: 'invitation', preset: 'p', size: { w: 400, h: h || 100 }, section, background: { kind: 'solid', color: { kind: 'token', token: 'bg' } }, nodes: [label('TEXT-' + section)] })
+const withSections = (data) => {
+  const doc = docOf([])
+  doc.artboards = [part('cover', 100), part('gallery', 200), part('send-gift', 300), part('rsvp', 100)]
+  return engine.render(doc, data)
+}
+const shown = (html) => ['cover', 'gallery', 'send-gift', 'rsvp'].filter((name) => html.includes('TEXT-' + name))
+assert.deepStrictEqual(shown(withSections({})), ['cover', 'gallery', 'send-gift', 'rsvp']) // no switches: everything
+assert.deepStrictEqual(shown(withSections({ sections: { gallery: true, rsvp: true, nonsense: false } })), ['cover', 'gallery', 'send-gift', 'rsvp']) // only an explicit false hides
+html = withSections({ sections: { gallery: false } })
+assert.deepStrictEqual(shown(html), ['cover', 'send-gift', 'rsvp'])
+assert.deepStrictEqual([...html.matchAll(/data-zd-section-index="(\d+)"/g)].map((m) => m[1]), ['0', '1', '2']) // the stack is renumbered
+const tops = (h) => [...h.matchAll(/data-zd-section-index="\d+" data-zd-base-height="[^"]+" style="position:absolute;top:(\d+)px/g)].map((m) => +m[1])
+assert.deepStrictEqual(tops(html), [0, 100, 400]) // and closes the gap: cover 100, then the full gift section (300), then rsvp
+// turning gifts down replaces the section with the couple's message - and the wording depends on the envelope switch
+html = withSections({ sections: { 'send-gift': false } })
+assert.ok(!html.includes('TEXT-send-gift') && html.includes('mohon untuk tidak memberikan bingkisan'))
+assert.deepStrictEqual(tops(html), [0, 100, 300, 524]) // the message section is 224 tall, not the gift section's 300
+html = withSections({ sections: { 'send-gift': false, envelope: false } })
+assert.ok(html.includes('adalah hadiah yang paling berarti') && !html.includes('bingkisan'))
+html = withSections({ sections: { 'send-gift': false }, fields: { teks_pesan_tanpa_kado_fisik: 'Tanpa <b>kado</b>, ya' } })
+assert.ok(html.includes('Tanpa &lt;b&gt;kado&lt;/b&gt;, ya') && !html.includes('bingkisan')) // their own words win, and are escaped
+html = withSections({ sections: { 'send-gift': false, envelope: false }, fields: { teks_pesan_tanpa_kado: 'Cukup doa', teks_pesan_tanpa_kado_fisik: 'Tanpa kado' } })
+assert.ok(html.includes('Cukup doa') && !html.includes('Tanpa kado'))
+// a canvas the couple made (no section) is never hidden, whatever the switches say
+{
+  const doc = docOf([])
+  const custom = part('cover', 100); delete custom.section; custom.id = 'k3Jx9'; custom.name = 'Kanvas 1'; custom.nodes = [label('TEXT-custom')]
+  doc.artboards = [custom]
+  assert.ok(engine.render(doc, { sections: { cover: false, 'k3Jx9': false } }).includes('TEXT-custom'))
+}
+// the opening gate goes with its switch, and so does the "held until it opens" state
+html = engine.render(docOf([box('r1', { animations: [anim()] })], [box('g1')]), {})
+assert.ok(html.includes('id="zd-gate"') && html.includes('data-zd-gated="1"'))
+html = engine.render(docOf([box('r1', { animations: [anim()] })], [box('g1')]), { sections: { 'opening-overlay': false } })
+assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
+
 console.log('zedoc-core: ok')

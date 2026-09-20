@@ -1209,6 +1209,32 @@
    * reflow growth) - so one section's repeat never shifts another
    * section's layout, unlike a single-artboard doc's shared reflow pass.
    */
+  // The wizard's on/off switches (`data.sections`, keyed like core.SECTIONS): a
+  // section switched off (=== false; absent or true = shown) is not drawn, and the
+  // opening gate goes with 'opening-overlay'. The exception is 'send-gift': turning
+  // gifts down is a message to the guests, not an omission, so that section is
+  // replaced by the couple's decline text (the same two fields and fallback wording
+  // the .dc.html engine used - one text when the envelope is off too, another when
+  // only physical gifts are declined).
+  var NO_GIFT_MESSAGE = 'Kehadiran dan doa restu Bapak/Ibu/Saudara/i adalah hadiah yang paling berarti bagi kami.';
+  var NO_PHYSICAL_GIFT_MESSAGE = 'Kehadiran dan doa restu Bapak/Ibu/Saudara/i merupakan kebahagiaan yang sangat berarti bagi kami. ' +
+    'Dengan segala hormat, kami mohon untuk tidak memberikan bingkisan, kado, ataupun karangan bunga.';
+
+  function giftDeclinedArtboard(artboard, data) {
+    var fields = data.fields || {};
+    var envelopeOff = (data.sections || {}).envelope === false;
+    var message = envelopeOff ? (fields.teks_pesan_tanpa_kado || NO_GIFT_MESSAGE) : (fields.teks_pesan_tanpa_kado_fisik || NO_PHYSICAL_GIFT_MESSAGE);
+    var width = 320;
+    var node = {
+      id: 'zd-gift-declined', name: 'Gift declined message', type: 'text',
+      frame: { x: Math.round((artboard.size.w - width) / 2), y: 64, w: width, h: 96, rotate: 0, flipX: false, flipY: false },
+      opacity: 0.9, visible: true, locked: false, text: message,
+      style: { font: { kind: 'token', token: 'body' }, size: 15, weight: 400, lineHeight: 1.7, letterSpacing: 0, align: 'center', color: { kind: 'token', token: 'ink' }, italic: false, underline: false, transform: 'none' }
+    };
+    // the text flow grows the box if the couple's message runs longer
+    return Object.assign({}, artboard, { nodes: [node], size: { w: artboard.size.w, h: 224 } });
+  }
+
   function render(doc, data, opts) {
     opts = opts || {};
     motionUsed = { any: false, reveal: false, presets: {} };
@@ -1263,10 +1289,17 @@
     }
 
     var stageWidth = artboards[0].size.w;
+    var switches = data.sections || {};
+    var shown = [];
+    artboards.forEach(function (artboard) {
+      var key = ZeDocCore.sectionOf(artboard);
+      if (key === 'send-gift' && switches[key] === false) shown.push(giftDeclinedArtboard(artboard, data));
+      else if (!(key && switches[key] === false)) shown.push(artboard);
+    });
     var bodyHtml = '';
     var cursorY = 0;
-    for (var s = 0; s < artboards.length; s++) {
-      var section = artboards[s];
+    for (var s = 0; s < shown.length; s++) {
+      var section = shown[s];
       var sectionCtx = ctxFor(section);
       var sectionLaid = reflowNodes(unwrapBlock(section.nodes), data);
       var sectionHeight = section.size.h + sectionLaid.extra;
@@ -1284,7 +1317,7 @@
     // are both '', output is byte-identical to before this existed.
     var envelope = doc.artboards.filter(function (a) { return a.role === 'envelope'; })[0];
     var gateHtml = '', gateScript = '';
-    if (envelope && envelope.nodes.length > 0) {
+    if (envelope && envelope.nodes.length > 0 && switches['opening-overlay'] !== false) {
       var envelopeCtx = ctxFor(envelope);
       var gateLaid = reflowNodes(unwrapBlock(envelope.nodes), data);
       var gateBodyHtml = gateLaid.items.map(function (entry, i) { return renderNode(entry.node, envelopeCtx, entry.y, gateLaid.bgHeightGrow[i]); }).join('');
