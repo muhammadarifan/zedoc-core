@@ -225,4 +225,41 @@ assert.ok(!core.isStretchShape({ name: 'Card background', type: 'text' }) && !co
 assert.ok(core.isStretchShape({ name: 'Timeline line', type: 'shape' })) // the connector beside a growing story stretches with it
 assert.ok(!core.isStretchShape({ name: 'Timeline dot', type: 'shape' }))
 
+// --- node motion ------------------------------------------------------------------
+const engine = require('./engine.js')
+const anim = (over) => Object.assign({ preset: 'rise', trigger: 'load', duration: 600, delay: 0, easing: 'ease-out' }, over)
+assert.strictEqual(core.motionStyle({}), null) // no animations -> nothing to add
+let motion = core.motionStyle({ animations: [anim({ amount: 40 }), anim({ preset: 'fade', trigger: 'reveal', delay: 100 })] })
+assert.strictEqual(motion.style.animationName, 'zd-motion-rise, zd-motion-fade')
+assert.strictEqual(motion.style['--st-rise-distance'], '40px') // amount feeds the preset's CSS variable
+assert.strictEqual(motion.style.animationPlayState, 'running, var(--zd-rv,paused)') // reveal waits for the observer
+assert.strictEqual(motion.style.animationFillMode, 'backwards, backwards')
+assert.ok(motion.reveal)
+motion = core.motionStyle({ animationPlayMode: 'sequence', animations: [anim({ delay: 50 }), anim({ delay: 10 }), anim({ preset: 'pulse', trigger: 'loop' })] })
+assert.strictEqual(motion.style.animationDelay, '50ms, 660ms, 1260ms') // each entry starts after the previous one ended
+assert.strictEqual(motion.style.animationIterationCount, '1, 1, infinite')
+assert.ok(!motion.reveal)
+
+// the guest page: keyframes only for presets in use, hooks only when something animates
+const box = (id, extra) => Object.assign({
+  id, name: id, type: 'shape', frame: { x: 0, y: 0, w: 50, h: 50, rotate: 0, flipX: false, flipY: false }, opacity: 1, visible: true, locked: false,
+  shape: 'rect', fill: { kind: 'solid', color: { kind: 'token', token: 'bg' } }, stroke: { color: { kind: 'token', token: 'line' }, width: 0, style: 'solid' }, radius: 0,
+}, extra)
+const docOf = (nodes, envelopeNodes) => ({
+  format: 'zedocument', version: 1, id: 'd', name: 'd', createdAt: '', updatedAt: '', assets: [], data: {},
+  theme: { palette: { bg: '#fff', surface: '#fff', ink: '#000', inkSoft: '#888', accent: '#a00', accentInk: '#fff', line: '#ddd' }, fonts: { display: 'serif', body: 'sans-serif' }, radius: 0 },
+  artboards: [{ id: 'a', name: 'a', role: 'invitation', preset: 'invitation', size: { w: 400, h: 200 }, background: { kind: 'solid', color: { kind: 'token', token: 'bg' } }, nodes }].concat(
+    envelopeNodes ? [{ id: 'e', name: 'e', role: 'envelope', preset: 'envelope', size: { w: 400, h: 200 }, background: { kind: 'solid', color: { kind: 'token', token: 'bg' } }, nodes: envelopeNodes }] : []),
+})
+let html = engine.render(docOf([box('plain')]), {})
+assert.ok(!/zd-motion|data-zd-motion|zdMotionStart|data-zd-gated/.test(html)) // no animations, no trace
+html = engine.render(docOf([box('a1', { animations: [anim()] }), box('a2', { frame: { x: 0, y: 0, w: 50, h: 50, rotate: 30, flipX: false, flipY: false }, animations: [anim({ preset: 'spin', trigger: 'loop' })] })]), {})
+assert.ok(html.includes('@keyframes zd-motion-rise') && html.includes('@keyframes zd-motion-spin') && !html.includes('@keyframes zd-motion-pop'))
+assert.strictEqual((html.match(/data-zd-motion="1"/g) || []).length, 2)
+assert.ok(/transform:rotate\(30deg\)[^"]*animation-name:zd-motion-spin/.test(html)) // the frame's own rotation is left alone
+assert.ok(html.includes('zdMotionStart()') && !html.includes('data-zd-gated="1"')) // no gate: starts straight away
+html = engine.render(docOf([box('r1', { animations: [anim({ trigger: 'reveal' })] })], [box('g1')]), {})
+assert.ok(html.includes('data-zd-motion="reveal"') && html.includes('data-zd-gated="1"')) // behind an envelope gate...
+assert.ok(html.includes("window.zdMotionStart&&window.zdMotionStart()")) // ...the gate's click releases it
+
 console.log('zedoc-core: ok')

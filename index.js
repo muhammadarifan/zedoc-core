@@ -877,7 +877,97 @@
     return decorated || view;
   }
 
+  // ---------------------------------------------------------------------
+  // Node motion (`node.animations`). The keyframes use the individual CSS
+  // properties (translate/scale/rotate), not `transform`, so they compose with
+  // a frame's own rotate/flip transform instead of replacing it - the guest
+  // page animates the frame element itself. The designer canvas animates an
+  // inner wrapper with its own `st-motion-*` copy of these (render/animation.ts).
+  // ponytail: flip has no perspective() (it can't be an individual property),
+  // so it reads as a vertical squash-and-fade rather than a 3D flip.
+  // ---------------------------------------------------------------------
+
+  var MOTION_KEYFRAMES = {
+    fade: '@keyframes zd-motion-fade{from{opacity:0}}',
+    rise: '@keyframes zd-motion-rise{from{opacity:0;translate:0 var(--st-rise-distance,16px)}}',
+    'slide-left': '@keyframes zd-motion-slide-left{from{opacity:0;translate:var(--st-slide-distance,24px) 0}}',
+    'slide-right': '@keyframes zd-motion-slide-right{from{opacity:0;translate:calc(var(--st-slide-distance,24px)*-1) 0}}',
+    zoom: '@keyframes zd-motion-zoom{from{opacity:0;scale:var(--st-zoom-scale,.9)}}',
+    shake: '@keyframes zd-motion-shake{0%,100%{translate:0 0}25%{translate:calc(var(--st-shake-distance,4px)*-1) 0}75%{translate:var(--st-shake-distance,4px) 0}}',
+    bounce: '@keyframes zd-motion-bounce{0%{opacity:0;translate:0 calc(var(--st-bounce-height,24px)*-1)}60%{translate:0 calc(var(--st-bounce-height,24px)*var(--st-bounce-overshoot,.25))}80%{translate:0 calc(var(--st-bounce-height,24px)*var(--st-bounce-overshoot,.25)*-.5)}}',
+    flip: '@keyframes zd-motion-flip{from{opacity:0;rotate:1 0 0 var(--st-flip-degrees,90deg)}}',
+    pop: '@keyframes zd-motion-pop{0%{opacity:0;scale:var(--st-pop-scale,.3)}70%{scale:var(--st-pop-overshoot,1.08)}}',
+    pulse: '@keyframes zd-motion-pulse{0%,100%{scale:1}50%{scale:var(--st-pulse-scale,1.05)}}',
+    spin: '@keyframes zd-motion-spin{from{rotate:0deg}to{rotate:calc(var(--st-spin-dir,1)*360deg)}}'
+  };
+
+  // preset -> the CSS variable its `amount` (and `overshoot`) feed, and how
+  // the stored number maps to a CSS value. Same table as ze-designer's
+  // AMPLITUDE_CONFIG / OVERSHOOT_CONFIG (minus the inspector labels).
+  var MOTION_AMOUNT = {
+    rise: ['--st-rise-distance', 'px', 16], 'slide-left': ['--st-slide-distance', 'px', 24], 'slide-right': ['--st-slide-distance', 'px', 24],
+    zoom: ['--st-zoom-scale', 'shrink', 10], shake: ['--st-shake-distance', 'px', 4], bounce: ['--st-bounce-height', 'px', 24],
+    flip: ['--st-flip-degrees', 'deg', 90], pop: ['--st-pop-scale', 'abs', 30], pulse: ['--st-pulse-scale', 'grow', 5]
+  };
+  var MOTION_OVERSHOOT = { bounce: ['--st-bounce-overshoot', 'abs', 25], pop: ['--st-pop-overshoot', 'grow', 8] };
+
+  function motionValue(kind, n) {
+    switch (kind) {
+      case 'px': return n + 'px';
+      case 'deg': return n + 'deg';
+      case 'shrink': return (1 - n / 100).toFixed(3);
+      case 'grow': return (1 + n / 100).toFixed(3);
+      default: return (n / 100).toFixed(3);
+    }
+  }
+
+  /**
+   * The CSS a guest page puts on a node that has `animations`, or null.
+   * { style, presets, reveal } - `reveal` means at least one entry waits for
+   * the node to scroll into view: it is paused until `--zd-rv` is set to
+   * `running` (the engine's IntersectionObserver does that). All entries are
+   * active at once - there is no "preview" gating on a guest page.
+   */
+  function motionStyle(node) {
+    var list = node.animations;
+    if (!list || !list.length) return null;
+    var style = {};
+    var sequence = node.animationPlayMode === 'sequence';
+    var cursor = 0;
+    var names = [], durations = [], delays = [], easings = [], fills = [], counts = [], states = [], presets = [];
+    var reveal = false;
+    list.forEach(function (a) {
+      var amount = MOTION_AMOUNT[a.preset];
+      if (amount) style[amount[0]] = motionValue(amount[1], a.amount != null ? a.amount : amount[2]);
+      var overshoot = MOTION_OVERSHOOT[a.preset];
+      if (overshoot) style[overshoot[0]] = motionValue(overshoot[1], a.overshoot != null ? a.overshoot : overshoot[2]);
+      if (a.preset === 'spin') style['--st-spin-dir'] = a.direction === 'ccw' ? '-1' : '1';
+      // ponytail: sequence mode chains by summing each entry's delay+duration,
+      // so a loop entry mid-chain counts as one iteration (same as the designer).
+      var delay = sequence ? a.delay + cursor : a.delay;
+      if (sequence) cursor += a.delay + a.duration;
+      names.push('zd-motion-' + a.preset);
+      durations.push(a.duration + 'ms');
+      delays.push(delay + 'ms');
+      easings.push(a.easing);
+      fills.push(a.trigger === 'loop' ? 'none' : 'backwards');
+      counts.push(a.trigger === 'loop' ? 'infinite' : '1');
+      states.push(a.trigger === 'reveal' ? 'var(--zd-rv,paused)' : 'running');
+      if (a.trigger === 'reveal') reveal = true;
+      presets.push(a.preset);
+    });
+    style.animationName = names.join(', ');
+    style.animationDuration = durations.join(', ');
+    style.animationDelay = delays.join(', ');
+    style.animationTimingFunction = easings.join(', ');
+    style.animationFillMode = fills.join(', ');
+    style.animationIterationCount = counts.join(', ');
+    style.animationPlayState = states.join(', ');
+    return { style: style, presets: presets, reveal: reveal };
+  }
+
   return {
+    motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,
     resolveColor: resolveColor, resolveFont: resolveFont, mergeTheme: mergeTheme,

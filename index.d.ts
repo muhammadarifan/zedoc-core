@@ -231,7 +231,22 @@ declare const core: {
     count: number,
   ): GridLayout
   flowBoxes(boxes: FlowBox[]): { shift: number; bottom: number }
+  /** CSS for a node's `animations` on a guest page, or null when it has none. `reveal` = some entry waits for the node to scroll into view. */
+  motionStyle(node: { animations?: MotionAnimation[]; animationPlayMode?: 'parallel' | 'sequence' }): { style: Record<string, string>; presets: string[]; reveal: boolean } | null
+  /** `@keyframes` text per preset, named `zd-motion-<preset>`. */
+  MOTION_KEYFRAMES: Record<string, string>
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
+}
+
+export interface MotionAnimation {
+  preset: string
+  trigger: 'load' | 'reveal' | 'loop'
+  duration: number
+  delay: number
+  easing: string
+  amount?: number
+  overshoot?: number
+  direction?: 'cw' | 'ccw'
 }
 
 export default core

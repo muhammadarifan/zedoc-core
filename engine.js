@@ -905,7 +905,28 @@
 
   // --- node dispatch (NodeContent.tsx port) ---------------------------------
 
+  // What this render has animated so far (reset at the top of render(); a
+  // render is synchronous, so one module-level tally is enough). Tells render()
+  // which @keyframes, gate hook and reveal observer the page needs - a doc with
+  // no `animations` anywhere emits none of them.
+  var motionUsed = { any: false, reveal: false, presets: {} };
+
+  // Puts a node's `animations` on its positioned wrapper (a repeat's items
+  // each get it). Mutates in place: decorateNode reads view.style right after.
+  function applyMotion(node, view) {
+    var motion = ZeDocCore.motionStyle(node);
+    if (!motion) return;
+    motionUsed.any = true;
+    if (motion.reveal) motionUsed.reveal = true;
+    motion.presets.forEach(function (preset) { motionUsed.presets[preset] = true; });
+    (view.fragment || [view]).forEach(function (target) {
+      target.style = Object.assign(target.style || {}, motion.style);
+      target.attrs = Object.assign(target.attrs || {}, { 'data-zd-motion': motion.reveal ? 'reveal' : '1' });
+    });
+  }
+
   function decorateNode(node, view, ctx, o) {
+    applyMotion(node, view);
     var wrapStyle = view.style;
     var gctx = ZeDocCore.groupCtx(node, ctx);
 
@@ -1058,6 +1079,7 @@
   // The guest page draws through ZeDocCore.nodeView with decorateNode layered on.
   function renderNode(node, ctx, yOverride, heightGrow) {
     var view = ZeDocCore.nodeView(node, ctx, { y: yOverride, heightGrow: heightGrow });
+    if (view && view.fragment) applyMotion(node, view); // a repeat is not decorated
     return view ? ZeDocCore.toHtml(view) : '';
   }
 
@@ -1189,6 +1211,7 @@
    */
   function render(doc, data, opts) {
     opts = opts || {};
+    motionUsed = { any: false, reveal: false, presets: {} };
     data = data || {};
     data.fields = data.fields || {};
     data.images = data.images || {};
@@ -1269,7 +1292,9 @@
       var gateBgStyle = styleStr(resolveFill(envelope.background, envelopeCtx));
       gateHtml = '<div id="zd-gate" style="' + styleStr({ position: 'fixed', inset: 0, zIndex: 1000, overflow: 'hidden', cursor: 'pointer' }) + gateBgStyle +
         'transition:opacity 1.1s ease, visibility 1.1s ease" onclick="' +
-        'this.style.opacity=0;this.style.visibility=\'hidden\';this.style.pointerEvents=\'none\'">' +
+        'this.style.opacity=0;this.style.visibility=\'hidden\';this.style.pointerEvents=\'none\'' +
+        // animations behind the gate wait for it to open (zdMotionStart below)
+        (motionUsed.any ? ';window.zdMotionStart&&window.zdMotionStart()' : '') + '">' +
         '<div id="zd-gate-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(envelope.size.w), height: px(gateTotalHeight) }) + gateBgStyle + '">' +
         gateBodyHtml +
         '</div></div>';
@@ -1533,13 +1558,36 @@
       '}});' +
       '})();';
 
+    // Node animations (ZeDocCore.motionStyle). The keyframes are only emitted
+    // for presets the doc uses. While the gate is up the stage's animations are
+    // held (body[data-zd-gated]); zdMotionStart releases them - on load with no
+    // gate, on the gate's click otherwise - and only then starts watching the
+    // `reveal` ones, so a section is not "revealed" behind the gate.
+    var motionCss = '';
+    var motionScript = '';
+    if (motionUsed.any) {
+      motionCss = Object.keys(motionUsed.presets).map(function (preset) { return ZeDocCore.MOTION_KEYFRAMES[preset]; }).join('') +
+        'body[data-zd-gated] #zd-stage [data-zd-motion]{animation-play-state:paused!important}' +
+        '@media (prefers-reduced-motion:reduce){[data-zd-motion]{animation:none!important}}';
+      motionScript = '(function(){var started=false;' +
+        'window.zdMotionStart=function(){if(started)return;started=true;' +
+        'document.body.removeAttribute("data-zd-gated");' +
+        'var els=Array.prototype.slice.call(document.querySelectorAll("[data-zd-motion=reveal]"));' +
+        'function go(el){el.style.setProperty("--zd-rv","running");}' +
+        'if(!("IntersectionObserver" in window)){els.forEach(go);return;}' +
+        'var io=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){go(e.target);io.unobserve(e.target);}});});' +
+        'els.forEach(function(el){io.observe(el);});};' +
+        'if(!document.body.hasAttribute("data-zd-gated"))window.zdMotionStart();' +
+        '})();';
+    }
+
     return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<link rel="preconnect" href="https://fonts.googleapis.com">' +
       '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       buildFontLinks(fontFamilies) +
-      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}</style>' +
-      '</head><body data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '">' +
+      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' + motionCss + '</style>' +
+      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '">' +
       '<div id="zd-wrap" style="position:relative;width:100%;overflow:hidden">' +
       '<div id="zd-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(stageWidth), height: px(totalHeight) }) + '">' +
       bodyHtml +
@@ -1558,6 +1606,7 @@
       '<script>' + lightboxScript + '</script>' +
       '<script>' + rsvpWishScript + '</script>' +
       '<script>' + handDrawnRsvpWishScript + '</script>' +
+      (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
       '</body></html>';
   }
 
