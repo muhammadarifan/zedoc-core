@@ -1,4 +1,4 @@
-// node test.js - the smallest check that fails if flowBoxes' rules break.
+// node test.js - the smallest check that fails if the flow or resolve rules break.
 const assert = require('node:assert')
 const { flowBoxes } = require('./index.js')
 
@@ -49,4 +49,45 @@ boxes = [{ top: 0, height: 10, stretch: true, textHeight: 99 }, { top: 10, heigh
 flowBoxes(boxes)
 assert.strictEqual(boxes[1].y, 10)
 
-console.log('zedoc-core flowBoxes: ok')
+// --- resolve layer ---------------------------------------------------------
+const core = require('./index.js')
+const theme = { palette: { ink: '#111', accent: '#c00' }, fonts: { display: 'Serif', body: 'Sans' } }
+const ctx = (extra) => ({ theme, assets: [{ id: 'a1', src: '/assets/x.webp' }], data: { fields: { judul: 'F', nama_panggilan_mempelai_1: 'Dimas' }, links: { link_konfirmasi_wa: 'wa' }, audio: { background_music: 'mp3' }, images: {} }, ...extra })
+const textNode = (o) => ({ type: 'text', name: '', text: 'literal', ...o })
+
+assert.strictEqual(core.FIELDS.length, 68)
+assert.ok(core.isKnownField('judul_acara') && !core.isKnownField('nama_acara'))
+assert.strictEqual(core.resolveColor({ kind: 'token', token: 'accent' }, theme), '#c00')
+assert.strictEqual(core.resolveFont({ kind: 'custom', family: 'X' }, theme), 'X')
+
+// bound text: data wins, literal is the fallback, a repeat item wins for item keys only
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'nama_panggilan_mempelai_1' } }), ctx()), 'Dimas')
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'nama_panggilan_mempelai_2' } }), ctx()), 'literal')
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'venue' } }), ctx({ repeatItem: { venue: 'Aula' } })), 'Aula')
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'judul_acara' } }), ctx({ repeatItem: { judul_acara: 'item' } })), 'literal') // known key ignores the item
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'venue' } }), ctx({ preferLiteralText: true })), 'literal')
+// buckets: vocabulary kinds first, then where the data really has an unlisted key
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'link_konfirmasi_wa' } }), ctx()), 'wa')
+assert.strictEqual(core.resolveText(textNode({ binding: { key: 'background_music' } }), ctx()), 'mp3')
+// the combined "Groom & Bride" nodes show the real names
+assert.strictEqual(core.resolveText(textNode({ name: 'Cover names' }), ctx()), 'Dimas & Larasati')
+
+// images / fills go through mapSrc so the designer can prefix its origin
+const img = { assetId: 'a1' }
+assert.strictEqual(core.resolveImageSrc(img, ctx()), '/assets/x.webp')
+assert.strictEqual(core.resolveImageSrc(img, ctx(), (s) => 'http://o' + s), 'http://o/assets/x.webp')
+assert.strictEqual(core.resolveFill({ kind: 'image', assetId: 'a1', fit: 'cover', opacity: 1 }, ctx(), (s) => 'H' + s).backgroundImage, 'url(H/assets/x.webp)')
+assert.deepStrictEqual(core.resolveFill({ kind: 'none' }, ctx()), {})
+
+// style output carries units and skips the transform when there is none
+const fs = core.frameStyle({ x: 1, y: 2, w: 3, h: 4, rotate: 0, flipX: false, flipY: true }, 0.5)
+assert.deepStrictEqual([fs.left, fs.top, fs.width, fs.height, fs.transform], ['1px', '2px', '3px', '4px', 'scaleY(-1)'])
+assert.strictEqual(core.frameStyle({ x: 0, y: 0, w: 1, h: 1, rotate: 0 }, 1).transform, undefined)
+
+// a group's font override wins for token fonts only
+const node = { style: { font: { kind: 'token', token: 'display' }, size: 10, weight: 400, italic: false, underline: false } }
+assert.strictEqual(core.resolveTextStyle(node, { fontStyleOverride: { display: { size: 30 } } }).size, 30)
+node.style.font = { kind: 'custom', family: 'F' }
+assert.strictEqual(core.resolveTextStyle(node, { fontStyleOverride: { display: { size: 30 } } }).size, 10)
+
+console.log('zedoc-core: ok')

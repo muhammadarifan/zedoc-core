@@ -23,3 +23,13 @@ the page's runtime script (DOM adapter); the designer canvas calls it with
 boxes built from the document (`ze-designer/src/render/flow.ts`). Keep it
 self-contained - it is stringified with `Function.prototype.toString`.
 `npm test` runs the self-check.
+
+## Resolve layer
+
+`index.js` also owns the pure functions that turn document values into what is
+drawn: `resolveText`, `resolveImageSrc`, `resolveFill`, `resolveColor`,
+`resolveFont`, `resolveTextStyle`, `frameStyle`, `clipStyleFor`, `mergeTheme`,
+plus the closed data vocabulary (`FIELDS`, `LISTS`). The guest renderer and the
+designer canvas both call these instead of keeping copies. Style values carry
+their units (`'12px'`), so they are valid as React inline style and as CSS text;
+`mapSrc` lets a host rewrite asset urls (the designer prefixes its origin).

@@ -134,74 +134,18 @@
     return 'https://calendar.google.com/calendar/render?' + params;
   }
 
-  // --- resolve.ts port -----------------------------------------------------
-
-  function resolveColor(ref, theme) {
-    return ref.kind === 'token' ? theme.palette[ref.token] : ref.value;
-  }
-
-  function resolveFont(ref, theme) {
-    return ref.kind === 'token' ? theme.fonts[ref.token] : ref.family;
-  }
-
-  // Port of resolveTextStyle (render/resolve.ts): a group's style.fontStyle
-  // (GroupStyle.tsx) forces size/weight/italic/underline on every text node
-  // using that theme font token, regardless of what that node itself was
-  // authored with - see ctx.fontStyleOverride, threaded in by ctxFor/the
-  // 'group' render case below. A `custom`-font text node is never affected,
-  // same scoping the family override (theme.fonts) already has.
-  function resolveTextStyle(node, ctx) {
-    var token = node.style.font.kind === 'token' ? node.style.font.token : null;
-    var override = (token && ctx.fontStyleOverride) ? ctx.fontStyleOverride[token] : null;
-    return {
-      size: (override && override.size != null) ? override.size : node.style.size,
-      weight: (override && override.weight != null) ? override.weight : node.style.weight,
-      italic: (override && override.italic != null) ? override.italic : node.style.italic,
-      underline: (override && override.underline != null) ? override.underline : node.style.underline
-    };
-  }
-
-  function findAsset(assets, assetId) {
-    if (!assetId) return null;
-    for (var i = 0; i < assets.length; i++) if (assets[i].id === assetId) return assets[i];
-    return null;
-  }
-
-  function resolveFill(fill, ctx) {
-    switch (fill.kind) {
-      case 'solid':
-        return { background: resolveColor(fill.color, ctx.theme) };
-      case 'gradient':
-        return { background: 'linear-gradient(' + fill.angle + 'deg, ' + resolveColor(fill.from, ctx.theme) + ', ' + resolveColor(fill.to, ctx.theme) + ')' };
-      case 'image': {
-        var asset = findAsset(ctx.assets, fill.assetId);
-        if (!asset) return {};
-        return {
-          backgroundImage: 'url(' + asset.src + ')',
-          backgroundSize: fill.fit === 'fill' ? '100% 100%' : fill.fit,
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          opacity: fill.opacity
-        };
-      }
-      default:
-        return {};
-    }
-  }
-
-  // Known top-level field keys that must always resolve from the flat
-  // fields/links bucket even inside a repeat (e.g. a shared "Buka Peta"
-  // button label, not per-event text) — see vocabulary.ts's isKnownField.
-  // Kept short on purpose: only the keys this hand-authored template
-  // actually binds at the top level while also being inside a repeat.
-  var TOP_LEVEL_INSIDE_REPEAT = {
-    teks_buka_peta: 1, teks_tambah_ke_kalender: 1
-  };
-
-  function bucketFor(key, data) {
-    if (key in data.links) return data.links;
-    return data.fields;
-  }
+  // --- resolve layer: shared with the designer canvas, lives in ZeDocCore ---
+  var resolveColor = ZeDocCore.resolveColor;
+  var resolveFont = ZeDocCore.resolveFont;
+  var resolveTextStyle = ZeDocCore.resolveTextStyle;
+  var resolveFill = ZeDocCore.resolveFill;
+  var resolveText = ZeDocCore.resolveText;
+  var resolveImageSrc = ZeDocCore.resolveImageSrc;
+  var findAsset = ZeDocCore.findAsset;
+  var frameStyle = ZeDocCore.frameStyle;
+  var clipStyleFor = ZeDocCore.clipStyleFor;
+  var mergeTheme = ZeDocCore.mergeTheme;
+  var mergeFontStyleOverride = ZeDocCore.mergeFontStyleOverride;
 
   // Shared by countdownBlockHtml (the drag-in "Components" widget) and
   // textNodeHtml's 'Countdown number N' override below (the catalog
@@ -234,22 +178,8 @@
     'Countdown seconds number': 's'
   };
 
-  // Same gap, three different nodes: most of the 25 catalog templates bake
-  // one or more "combined couple name" text nodes ("Envelope names" on the
-  // gate, "Cover names" on the hero, "Closing names" on the thank-you
-  // screen) as a single unbound node with static sample text ("Bagas &
-  // Larasati") - never wired to the real couple names, so guests saw the
-  // sample couple regardless of who the real bride/groom are. Coverage
-  // varies per template (checked via templates/*-zedoc.zedoc.json): 24/25
-  // for Envelope names, 22/25 for Closing names, 18/25 for Cover names -
-  // whichever a given template already splits into two separately-bound
-  // child nodes (e.g. whimsical-love's "Envelope names" group, or
-  // evergreen's "Groom name"/"Bride name" cover pair) is unaffected and
-  // just falls through unchanged below. Root-caused in the JSON data
-  // itself, but fixed once here rather than regenerating and re-verifying
-  // every affected template's layout for a value the renderer can just
-  // compute at render time.
-  var COMBINED_COUPLE_NAME_NODES = { 'Envelope names': 1, 'Cover names': 1, 'Closing names': 1 };
+  // ("Envelope names"/"Cover names"/"Closing names" show the couple's real
+  // names via ZeDocCore.resolveText.)
 
   // Every catalog template hand-draws its RSVP/Wishes/gift sections as plain
   // text/shape/group/repeat nodes (built per-template by scripts/zedoc-
@@ -297,59 +227,6 @@
     return (prev.dewasa || 0) + (prev.anak || 0) > 0;
   }
 
-  function resolveText(node, ctx) {
-    if (!node.binding) return node.text;
-    var key = node.binding.key;
-    if (ctx.repeatItem && !TOP_LEVEL_INSIDE_REPEAT[key] && key in ctx.repeatItem) {
-      var itemValue = ctx.repeatItem[key];
-      if (itemValue !== undefined && itemValue !== null && itemValue !== '') return String(itemValue);
-    }
-    var bucket = bucketFor(key, ctx.data);
-    return bucket[key] || node.text;
-  }
-
-  function resolveImageSrc(node, ctx) {
-    if (node.binding) {
-      var key = node.binding.key;
-      if (ctx.repeatItem && key in ctx.repeatItem) {
-        var itemValue = ctx.repeatItem[key];
-        if (itemValue) return String(itemValue);
-      }
-      var bound = ctx.data.images[key];
-      if (bound) return bound;
-    }
-    var asset = findAsset(ctx.assets, node.assetId);
-    return asset ? asset.src : null;
-  }
-
-  function frameStyle(frame, opacity) {
-    var transforms = [];
-    if (frame.rotate) transforms.push('rotate(' + frame.rotate + 'deg)');
-    if (frame.flipX) transforms.push('scaleX(-1)');
-    if (frame.flipY) transforms.push('scaleY(-1)');
-    return {
-      position: 'absolute',
-      left: px(frame.x),
-      top: px(frame.y),
-      width: px(frame.w),
-      height: px(frame.h),
-      opacity: opacity,
-      transform: transforms.length ? transforms.join(' ') : undefined,
-      transformOrigin: 'center center'
-    };
-  }
-
-  // A "frame" group's crop (ze-designer/src/doc/schema.ts's Clip, applied by
-  // ze-designer/src/render/resolve.ts's clipStyleFor) - rect/ellipse use
-  // overflow+border-radius, custom uses the preset's percentage polygon so
-  // it re-crops correctly whatever size the frame is.
-  function clipStyleFor(clip) {
-    if (clip.shape === 'rect') return { overflow: 'hidden', borderRadius: px(clip.radius || 0) };
-    if (clip.shape === 'ellipse') return { overflow: 'hidden', borderRadius: '50%' };
-    if (clip.shape === 'custom' && clip.polygon) return { clipPath: 'polygon(' + clip.polygon + ')' };
-    return {};
-  }
-
   // --- node views (TextNodeView/ImageNodeView/ShapeNodeView/SvgNodeView) ---
 
   function textNodeHtml(node, ctx) {
@@ -378,9 +255,6 @@
       var key = cdKey;
       text = String(countdownRemaining(ctx.data.countdownDatetime)[key]).padStart(2, '0');
       attrs = ' data-zd-cd-unit="' + key + '" data-zd-cd-target="' + escapeHtml(String(ctx.data.countdownDatetime)) + '"';
-    }
-    if (!node.binding && COMBINED_COUPLE_NAME_NODES[node.name || '']) {
-      text = fieldVal(ctx, 'nama_panggilan_mempelai_1', 'Bagas') + ' & ' + fieldVal(ctx, 'nama_panggilan_mempelai_2', 'Larasati');
     }
     // The static "Nama Tamu" placeholder becomes the real guest's name once
     // known - same idea as the combined-couple-name fix above.
@@ -1338,31 +1212,6 @@
   function unwrapBlock(nodes) {
     var block = wrappingBlock(nodes);
     return block ? block.children : nodes;
-  }
-
-  // A locked section's own style override (Artboard.style, set from
-  // ze-designer's inspector — see ArtboardStyle.tsx there) merged over the
-  // document theme, same idea as the palette/fonts merge BlockNodeView.tsx
-  // does for a `block` node. undefined style is a no-op.
-  function mergeTheme(theme, style) {
-    if (!style) return theme;
-    return {
-      palette: Object.assign({}, theme.palette, style.palette),
-      fonts: Object.assign({}, theme.fonts, style.fonts),
-      radius: theme.radius
-    };
-  }
-
-  // Port of mergeFontStyleOverride (render/resolve.ts) - folds a section's
-  // `style.fontStyle` (size/weight/italic/underline per font token) into
-  // whatever override already applies from an enclosing section, incoming
-  // taking precedence field-by-field. A no-op when the section sets none.
-  function mergeFontStyleOverride(existing, incoming) {
-    if (!incoming) return existing;
-    return {
-      display: Object.assign({}, existing && existing.display, incoming.display),
-      body: Object.assign({}, existing && existing.body, incoming.body)
-    };
   }
 
   // theme.fonts.display/body (and a style override copied from one of them)
