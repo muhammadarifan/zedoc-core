@@ -106,4 +106,59 @@ const line = core.shapeView({ shape: 'line', radius: 0, fill: { kind: 'none' }, 
 assert.strictEqual(line.children[0].style.height, '1px') // a line is at least 1px thick
 assert.strictEqual(core.toHtml(core.svgView({ markup: '<svg/>' })), '<div style="width:100%;height:100%;"><svg/></div>')
 
+// --- node trees: groups, repeats, hooks -------------------------------------
+const frame = (x, y, w, h) => ({ x, y, w, h, rotate: 0, flipX: false, flipY: false })
+const tstyle = tnode.style
+const T = (id, name, extra) => ({ id, name, type: 'text', visible: true, opacity: 1, frame: frame(0, 0, 100, 20), text: name, binding: null, style: tstyle, ...extra })
+const lctx = (extra) => ({ ...ctx(), mode: 'edit', ...extra })
+
+// hidden nodes are not drawn; a repeat is a fragment of item wrappers
+assert.strictEqual(core.nodeView({ ...T('a', 'A'), visible: false }, ctx()), null)
+const rep = { id: 'r', name: 'R', type: 'repeat', listKey: 'quotes', visible: true, opacity: 0.5, frame: frame(10, 100, 200, 50), children: [T('q', 'Q', { binding: { key: 'isi_quote' } })] }
+const data2 = { ...ctx().data, quotes: [{ isi_quote: 'one' }, { isi_quote: 'two' }] }
+const rv = core.nodeView(rep, { ...ctx(), data: data2 }, { y: 120 })
+assert.strictEqual(rv.fragment.length, 2)
+assert.deepStrictEqual(rv.fragment.map((v) => v.style.top), ['120px', '170px']) // stacked at i * frame.h below the (reflowed) y
+assert.strictEqual(rv.fragment[0].style.opacity, 0.5) // the guest applies the repeat's opacity per item
+assert.ok(core.toHtml(rv).includes('one') && core.toHtml(rv).includes('two'))
+// the canvas draws items inside the repeat's own box: origin 0,0, opacity 1, and the flow may move an item
+const items = core.repeatItemViews(rep, { ...lctx(), data: data2, place: (p) => (p === 'r#1' ? { y: 999, h: 60 } : undefined) }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 })
+assert.deepStrictEqual(items.map((v) => [v.style.left, v.style.top, v.style.height]), [['0px', '0px', '50px'], ['0px', '999px', '60px']])
+assert.strictEqual(items[0].children[0].children[0].measure, 'r#0/q') // text inside an item is measured under its path
+// an empty repeat: one stand-in item on the canvas, nothing for a guest
+assert.strictEqual(core.repeatItemViews(rep, { ...lctx(), data: { ...ctx().data, quotes: [] } }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 }).length, 1)
+assert.strictEqual(core.repeatItemViews(rep, { ...ctx(), data: { ...ctx().data, quotes: [] } }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 }).length, 0)
+
+// couple / events children resolve through the binding remap, like the compiler
+const cp = { ...rep, listKey: 'couple', children: [T('n', 'N', { binding: { key: 'nama_lengkap_mempelai' } })] }
+assert.ok(core.toHtml(core.nodeView(cp, { ...ctx(), data: { ...ctx().data, couple: [{ nama: 'Dimas W' }] } })).includes('Dimas W'))
+const ev = { ...rep, listKey: 'events', children: [T('e1', 'E1'), T('e2', 'E2'), T('e3', 'E3')] }
+const evHtml = core.toHtml(core.nodeView(ev, { ...ctx(), data: { ...ctx().data, events: [{ keterangan: 'KET', venue: 'VEN' }] } }))
+assert.ok(evHtml.includes('KET') && evHtml.includes('VEN') && evHtml.includes('E3')) // first two unbound texts bind, the third stays literal
+
+// a frame crops its children; an empty one is a checkerboard on the canvas only
+const grp = { id: 'g', name: 'G', type: 'group', visible: true, opacity: 1, frame: frame(0, 0, 50, 50), clip: { shape: 'ellipse' }, children: [] }
+assert.ok(core.toHtml(core.nodeView(grp, ctx())).includes('border-radius:50%'))
+assert.ok(!core.toHtml(core.nodeView(grp, ctx())).includes('conic'))
+assert.ok(core.toHtml(core.nodeView(grp, lctx())).includes('conic'))
+// a styled group's palette override applies to its children only
+const styled = { ...grp, clip: undefined, style: { palette: { ink: '#abc' } }, children: [T('t', 'T')] }
+assert.ok(core.toHtml(core.nodeView(styled, ctx())).includes('color:#abc'))
+
+// the canvas's flow decides where a nested node sits; the guest's reflow override wins over it
+const nested = { ...styled, style: undefined, children: [T('t', 'T', { frame: frame(0, 5, 100, 20) })] }
+const placedHtml = core.toHtml(core.nodeView(nested, { ...ctx(), place: (p) => (p === 'g/t' ? { y: 77, h: 33 } : undefined) }))
+assert.ok(placedHtml.includes('top:77px') && placedHtml.includes('height:33px'))
+
+// guest-only behaviour is layered on through ctx.decorate (view mutated, or replaced)
+const deco = core.nodeView(T('d', 'D'), { ...ctx(), decorate: (n, v) => { v.attrs['data-x'] = '1' } })
+assert.strictEqual(deco.attrs['data-x'], '1')
+assert.strictEqual(core.toHtml(core.nodeView(T('d', 'D'), { ...ctx(), decorate: () => ({ raw: '<b/>' }) })), '<b/>')
+// ext views (blocks, icons) are only drawn by hosts that know them
+const blk = { id: 'b', name: 'B', type: 'block', block: 'x', visible: true, opacity: 1, frame: frame(0, 0, 10, 10) }
+assert.ok(core.toHtml(core.nodeView(blk, ctx())).includes('></div>'))
+assert.ok(core.toHtml(core.nodeView(blk, ctx()), (v) => 'EXT:' + v.ext).includes('EXT:block'))
+// a bare attribute is written without a value
+assert.strictEqual(core.toHtml({ tag: 'div', attrs: { 'data-b': true, id: 'i' }, style: {} }), '<div data-b id="i" style=""></div>')
+
 console.log('zedoc-core: ok')

@@ -89,18 +89,34 @@ export interface ResolveContext {
   mapSrc?: (src: string) => string
   /** 'gallery' marks a photo for the guest page's lightbox. */
   repeatListKey?: string
+  /** 'edit' = the designer canvas (content-height text, placeholders, no guest hooks); default is the guest page. */
+  mode?: 'edit' | 'guest'
+  /** Where the text flow put a node instance, by path (canvas). */
+  place?: (path: string) => { y: number; h: number } | undefined
+  /** Guest-only behaviour layered on a node's view; return a view to replace it. */
+  decorate?: (node: any, view: ViewNode, ctx: any, o: { path: string; frame: any }) => ViewNode | void
   fontStyleOverride?: Record<string, { size?: number; weight?: number; italic?: boolean; underline?: boolean } | undefined>
 }
 
 /** A neutral view tree: hosts serialise it (toHtml) or map it to their own elements. */
 export interface ViewNode {
-  tag: string
-  /** Insertion order is the serialised attribute order. */
-  attrs?: Record<string, string>
+  tag?: string
+  /** Insertion order is the serialised attribute order; `true` writes a bare attribute. */
+  attrs?: Record<string, string | true>
   style?: StyleObject
   children?: (ViewNode | string)[]
   /** Raw markup for the element's content (imported SVG). */
   html?: string
+  /** Edit mode: the key the host reports this text's rendered height under. */
+  measure?: string
+  /** No wrapper of its own - just these children (a repeat's items). */
+  fragment?: ViewNode[]
+  /** Trusted markup standing in for the whole view (guest-only pieces). */
+  raw?: string
+  /** Something only the host can draw (a block, an icon): it gets the node and its context back. */
+  ext?: 'icon' | 'block'
+  node?: unknown
+  ctx?: unknown
 }
 
 declare const core: {
@@ -148,7 +164,7 @@ declare const core: {
       }
     },
     ctx: ResolveContext,
-    opts?: { autoHeight?: boolean },
+    opts?: { autoHeight?: boolean; measure?: string },
   ): ViewNode
   imageView(
     node: { binding?: { key: string } | null; assetId: string | null; radius: number; alt: string; fit: string },
@@ -164,7 +180,21 @@ declare const core: {
     ctx: ResolveContext,
   ): ViewNode
   svgView(node: { markup: string }): ViewNode
-  toHtml(view: ViewNode | string): string
+  toHtml(view: ViewNode | string, ext?: (view: ViewNode) => string): string
+  nodeView(node: any, ctx: ResolveContext, o?: { path?: string; y?: number | null; heightGrow?: number }): ViewNode | null
+  contentViews(node: any, ctx: ResolveContext, path: string): ViewNode[]
+  childViews(nodes: any[], ctx: ResolveContext, path: string): ViewNode[]
+  repeatItemViews(
+    node: any,
+    ctx: ResolveContext,
+    path: string,
+    o: { frame: { x: number; y: number; w: number; h: number }; origin: { x: number; y: number }; opacity: number },
+  ): ViewNode[]
+  groupCtx<C extends ResolveContext>(node: any, ctx: C): C
+  childPath(parent: string, id: string): string
+  itemPath(repeat: string, index: number): string
+  COUPLE_FIELD_REMAP: Record<string, string>
+  eventUnboundTextKey(unboundIndex: number): string | null
   styleText(style: StyleObject): string
   escapeHtml(value: unknown): string
 

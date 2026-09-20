@@ -420,7 +420,9 @@
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word'
       },
-      children: [resolveText(node, ctx)]
+      children: [resolveText(node, ctx)],
+      // the canvas reads the rendered height back under this key (edit mode)
+      measure: opts && opts.measure
     };
   }
 
@@ -442,7 +444,7 @@
         }
       };
     }
-    var isGalleryPhoto = ctx.repeatListKey === 'gallery';
+    var isGalleryPhoto = ctx.repeatListKey === 'gallery' && ctx.mode !== 'edit';
     var attrs = { src: src, alt: node.alt, draggable: 'false' };
     if (isGalleryPhoto) attrs['data-zd-gallery-src'] = src;
     return {
@@ -508,17 +510,192 @@
 
   var VOID_TAGS = { img: 1, br: 1, input: 1 };
 
-  /** Serialises a view tree: attrs in insertion order, then style. */
-  function toHtml(view) {
+  /**
+   * Serialises a view tree: attrs in insertion order, then style. A `fragment`
+   * is its children with no wrapper, `raw` is trusted markup, an attr set to
+   * `true` is written bare (`<div data-x style=..>`), and an `ext` view (block,
+   * icon: things only the host knows how to draw) is written by the host's
+   * own `ext(view)` or as nothing.
+   */
+  function toHtml(view, ext) {
     if (typeof view === 'string') return escapeHtml(view);
+    if (view.raw != null) return view.raw;
+    if (view.ext) return ext ? ext(view) : '';
+    if (view.fragment) return view.fragment.map(function (child) { return toHtml(child, ext); }).join('');
     var attrs = '';
     for (var name in view.attrs) {
-      if (Object.prototype.hasOwnProperty.call(view.attrs, name)) attrs += ' ' + name + '="' + escapeHtml(view.attrs[name]) + '"';
+      if (!Object.prototype.hasOwnProperty.call(view.attrs, name)) continue;
+      attrs += view.attrs[name] === true ? ' ' + name : ' ' + name + '="' + escapeHtml(view.attrs[name]) + '"';
     }
     var open = '<' + view.tag + attrs + ' style="' + styleText(view.style || {}) + '">';
     if (VOID_TAGS[view.tag]) return open;
-    var inner = view.html != null ? view.html : (view.children || []).map(toHtml).join('');
+    var inner = view.html != null ? view.html : (view.children || []).map(function (child) { return toHtml(child, ext); }).join('');
     return open + inner + '</' + view.tag + '>';
+  }
+
+  // ---------------------------------------------------------------------
+  // Node trees: a node inside its container, recursively. nodeView() is the
+  // node's positioned wrapper (what the guest page and the canvas both draw
+  // for a child of a group or a repeat item); contentViews() are the pieces
+  // inside it. Hosts customise through ctx:
+  //   ctx.mode      'edit' (designer canvas) or guest (default): the canvas
+  //                 measures text at content height, shows placeholders for
+  //                 empty repeats/frames, and skips guest-only hooks
+  //   ctx.place     (path) -> { y, h } | undefined - where the text flow put
+  //                 this node instance (canvas)
+  //   ctx.decorate  (node, view, ctx, o) -> view | undefined - guest-only
+  //                 behaviour (RSVP, calendar...) layered on by the engine
+  // A node instance is named by its path: `id` at the top level, `group/child`
+  // in a group, `repeat#2/child` in the third item of a repeat - a repeat draws
+  // the same child ids once per item, so ids alone are ambiguous.
+  // ---------------------------------------------------------------------
+
+  function childPath(parent, id) { return parent + '/' + id; }
+  function itemPath(repeat, index) { return repeat + '#' + index; }
+
+  /**
+   * Some repeat children were captured by the importer under a key other than
+   * the item schema's own (coupleItemSchema's nama/ortu/foto), and an events
+   * item's keterangan/venue have no binding at all - they are the first and
+   * second unbound text in the card. Both the HTML compiler and every renderer
+   * need the same effective key, so the remap lives here once.
+   */
+  var COUPLE_FIELD_REMAP = {
+    nama_lengkap_mempelai: 'nama',
+    profile_ortu_mempelai: 'ortu',
+    foto_profile_mempelai: 'foto'
+  };
+
+  function eventUnboundTextKey(unboundIndex) {
+    return unboundIndex === 0 ? 'keterangan' : unboundIndex === 1 ? 'venue' : null;
+  }
+
+  var CHECKERBOARD = 'repeating-conic-gradient(#e9e9ee 0% 25%, #f7f7fa 0% 50%) 50% / 16px 16px';
+
+  function childViews(nodes, ctx, path) {
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var view = nodeView(nodes[i], ctx, { path: childPath(path, nodes[i].id) });
+      if (!view) continue;
+      if (view.fragment) out = out.concat(view.fragment); else out.push(view);
+    }
+    return out;
+  }
+
+  // a styled group's own palette/font overrides apply to what is inside it
+  function groupCtx(node, ctx) {
+    if (!node.style) return ctx;
+    return Object.assign({}, ctx, {
+      theme: mergeTheme(ctx.theme, node.style),
+      fontStyleOverride: mergeFontStyleOverride(ctx.fontStyleOverride, node.style.fontStyle)
+    });
+  }
+
+  /**
+   * The wrapper views of a repeat: one per real item (one empty stand-in in
+   * edit mode when the list is empty), stacked at `i * frame.h` below `origin`.
+   * `>1 column` lays items out as a scaled grid instead. The guest page puts
+   * these straight into the section (origin = the node's own position); the
+   * canvas draws them inside the repeat's box (origin 0,0, opacity 1 - the box
+   * already applied it).
+   */
+  function repeatItemViews(node, ctx, path, o) {
+    var items = ctx.data[node.listKey] || [];
+    var fan = items.length > 0 ? items : (ctx.mode === 'edit' ? [undefined] : []);
+    var frame = o.frame;
+    var columns = node.columns || 1;
+    var grid = columns > 1 ? repeatGridPlacements({ x: o.origin.x, y: o.origin.y }, frame.w, frame.h, columns, node.gap || 0, fan.length) : null;
+    var views = [];
+    for (var i = 0; i < fan.length; i++) {
+      var item = fan[i];
+      var itemCtx = item ? Object.assign({}, ctx, { repeatItem: item, repeatListKey: node.listKey }) : ctx;
+      var key = itemPath(path, i);
+      var style;
+      if (grid) {
+        var placement = grid.placements[i];
+        style = frameStyle(Object.assign({}, frame, { x: placement.x, y: placement.y }), o.opacity);
+        style.transform = 'scale(' + placement.scale + ')';
+        style.transformOrigin = 'top left';
+      } else {
+        var itemFrame = Object.assign({}, frame, { x: o.origin.x, y: o.origin.y + i * frame.h });
+        var placed = ctx.place && ctx.place(key);
+        if (placed) itemFrame = Object.assign(itemFrame, { y: placed.y, h: placed.h });
+        style = frameStyle(itemFrame, o.opacity);
+      }
+      var unboundEventText = 0;
+      var children = node.children.map(function (child) {
+        var effective = child;
+        if (item && node.listKey === 'couple' && child.binding && (child.type === 'text' || child.type === 'image')) {
+          var remapped = COUPLE_FIELD_REMAP[child.binding.key];
+          if (remapped) effective = Object.assign({}, child, { binding: { key: remapped } });
+        } else if (item && node.listKey === 'events' && child.type === 'text' && !child.binding) {
+          var eventKey = eventUnboundTextKey(unboundEventText++);
+          if (eventKey) effective = Object.assign({}, child, { binding: { key: eventKey } });
+        }
+        return effective;
+      });
+      views.push({ tag: 'div', style: style, children: childViews(children, itemCtx, key) });
+    }
+    return views;
+  }
+
+  function contentViews(node, ctx, path) {
+    switch (node.type) {
+      case 'text': return [textView(node, ctx, { autoHeight: ctx.mode === 'edit', measure: ctx.mode === 'edit' ? path : undefined })];
+      case 'image': return [imageView(node, ctx)];
+      case 'shape': return [shapeView(node, ctx)];
+      case 'svg': return [svgView(node)];
+      case 'icon':
+      case 'block': return [{ ext: node.type, node: node, ctx: ctx }];
+      case 'group': {
+        var inner = childViews(node.children, groupCtx(node, ctx), path);
+        // a "frame" crops its children to a shape; an empty one shows the same
+        // checkerboard as an empty image so there is something to drop onto
+        if (!node.clip) return inner;
+        var clipStyle = Object.assign({ position: 'absolute', inset: '0' }, clipStyleFor(node.clip));
+        if (node.children.length === 0 && ctx.mode === 'edit') {
+          return [{ tag: 'div', style: clipStyle, children: [{ tag: 'div', style: { width: '100%', height: '100%', background: CHECKERBOARD } }] }];
+        }
+        return [{ tag: 'div', style: clipStyle, children: inner }];
+      }
+      default: return [];
+    }
+  }
+
+  /**
+   * `o`: { path, y, heightGrow } - y/heightGrow are the repeat reflow's
+   * override (guest); the canvas's flow comes through ctx.place(path).
+   * Returns null for a hidden node; a repeat returns { fragment: [items] }.
+   */
+  function nodeView(node, ctx, o) {
+    if (node.visible === false) return null;
+    o = o || {};
+    var path = o.path || node.id;
+    var frame = node.frame;
+    if (o.y != null || o.heightGrow) {
+      frame = Object.assign({}, frame);
+      if (o.y != null) frame.y = o.y;
+      if (o.heightGrow) frame.h += o.heightGrow;
+    } else if (ctx.place) {
+      var placed = ctx.place(path);
+      if (placed) frame = Object.assign({}, frame, { y: placed.y, h: placed.h });
+    }
+
+    if (node.type === 'repeat') {
+      return { fragment: repeatItemViews(node, ctx, path, { frame: frame, origin: { x: frame.x, y: frame.y }, opacity: node.opacity }) };
+    }
+
+    var attrs = {};
+    if (node.type === 'text') {
+      attrs['data-zd-text-node'] = node.id;
+      attrs['data-zd-base-height'] = px(node.frame.h);
+    } else if (node.type === 'shape' && /background$/i.test(node.name || '')) {
+      // a partial background stretches with the text that grows inside it
+      attrs['data-zd-flow-bg'] = '1';
+    }
+    var view = { tag: 'div', attrs: attrs, style: frameStyle(frame, node.opacity), children: contentViews(node, ctx, path) };
+    var decorated = ctx.decorate ? ctx.decorate(node, view, ctx, { path: path, frame: frame }) : undefined;
+    return decorated || view;
   }
 
   return {
@@ -528,6 +705,8 @@
     mergeFontStyleOverride: mergeFontStyleOverride, resolveTextStyle: resolveTextStyle,
     findAsset: findAsset, resolveFill: resolveFill, resolveText: resolveText, bucketFor: bucketFor,
     resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor,
-    textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml
+    textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml,
+    nodeView: nodeView, groupCtx: groupCtx, childViews: childViews, repeatItemViews: repeatItemViews, contentViews: contentViews,
+    childPath: childPath, itemPath: itemPath, COUPLE_FIELD_REMAP: COUPLE_FIELD_REMAP, eventUnboundTextKey: eventUnboundTextKey
   };
 });

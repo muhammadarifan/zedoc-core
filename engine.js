@@ -148,7 +148,7 @@
   var mergeFontStyleOverride = ZeDocCore.mergeFontStyleOverride;
 
   // Shared by countdownBlockHtml (the drag-in "Components" widget) and
-  // textNodeHtml's 'Countdown number N' override below (the catalog
+  // decorateText's 'Countdown number N' override below (the catalog
   // artboards' own hand-authored countdown, see build-*.mjs - those bake
   // '12'/'08'/'45'/'30' in as literal, unbound text, so it needs this same
   // computation applied by node name rather than by binding).
@@ -227,15 +227,18 @@
     return (prev.dewasa || 0) + (prev.anak || 0) > 0;
   }
 
-  // --- node views (TextNodeView/ImageNodeView/ShapeNodeView/SvgNodeView) ---
+  // --- guest-only behaviour, layered on ZeDocCore's node views ---------------
+  //
+  // ZeDocCore.nodeView draws every node the same way the designer canvas does;
+  // decorateNode (passed as ctx.decorate) is where this page adds what only a
+  // guest gets: live countdown digits, the real guest's name, the attendance
+  // toggle, real links/inputs on the hand-drawn RSVP/wish/gift elements.
 
-  // The base text view (font, size, colour, wrapping) is ZeDocCore.textView, the
-  // same one the designer canvas draws; everything below is guest-only: live
-  // countdown digits, the real guest's name, the attendance toggle hooks.
-  function textNodeHtml(node, ctx) {
-    var view = ZeDocCore.textView(node, ctx);
-    var style = view.style;
-    var text = view.children[0];
+  // The text view is the wrapper's first child.
+  function decorateText(node, view, ctx) {
+    var textView = view.children[0];
+    var style = textView.style;
+    var text = textView.children[0];
     var attrs = {};
 
     var cdMatch = COUNTDOWN_NUMBER_RE.exec(node.name || '');
@@ -272,25 +275,8 @@
       attrs['data-zd2-color-off'] = colorOff;
       attrs['data-zd2-selected'] = selected ? '1' : '0';
     }
-    view.attrs = attrs;
-    view.children = [text];
-    return ZeDocCore.toHtml(view);
-  }
-
-  // A gallery photo (repeat's listKey === 'gallery', see the 'repeat' case
-  // below which threads repeatListKey through) gets a data-zd-gallery-src
-  // hook for the lightbox script (render(), near the end of this file) to
-  // pick up by event delegation - couple/quote/etc photos elsewhere don't.
-  function imageNodeHtml(node, ctx) {
-    return ZeDocCore.toHtml(ZeDocCore.imageView(node, ctx));
-  }
-
-  function shapeNodeHtml(node, ctx) {
-    return ZeDocCore.toHtml(ZeDocCore.shapeView(node, ctx));
-  }
-
-  function svgNodeHtml(node) {
-    return ZeDocCore.toHtml(ZeDocCore.svgView(node));
+    textView.attrs = attrs;
+    textView.children = [text];
   }
 
   // --- block nodes (ze-designer's src/render/blocks/*.tsx port) ------------
@@ -946,186 +932,154 @@
 
   // --- node dispatch (NodeContent.tsx port) ---------------------------------
 
-  function renderChildren(nodes, ctx) {
-    var html = '';
-    for (var i = 0; i < nodes.length; i++) html += renderNode(nodes[i], ctx, null);
-    return html;
-  }
-
-  function renderNode(node, ctx, yOverride, heightGrow) {
-    if (node.visible === false) return '';
-    var frame = node.frame;
-    if (yOverride != null || heightGrow) {
-      frame = Object.assign({}, frame);
-      if (yOverride != null) frame.y = yOverride;
-      if (heightGrow) frame.h += heightGrow;
-    }
-    var wrapStyle = styleStr(frameStyle(frame, node.opacity));
+  function decorateNode(node, view, ctx, o) {
+    var wrapStyle = view.style;
+    var gctx = ZeDocCore.groupCtx(node, ctx);
 
     switch (node.type) {
       case 'text':
-        return '<div data-zd-text-node="' + escapeHtml(node.id) + '" data-zd-base-height="' + px(node.frame.h) + '" style="' + wrapStyle + '">' + textNodeHtml(node, ctx) + '</div>';
-      case 'image':
-        return '<div style="' + wrapStyle + '">' + imageNodeHtml(node, ctx) + '</div>';
+        decorateText(node, view, ctx);
+        return;
       case 'shape': {
         // "Yes button"/"No button" (see ATTEND_SHAPE_ROLE_BY_NAME above) pair
-        // with their own text label siblings (textNodeHtml's matching
+        // with their own text label siblings (decorateText's matching
         // ATTEND_LABEL_ROLE_BY_NAME case) to form one attendance toggle -
-        // both the "off" (shapeNodeHtml's normal output) and "on" look are
-        // pre-computed into data attributes so handDrawnRsvpWishScript can
-        // swap the inner div's style on click without knowing this theme.
+        // both the "off" (normal) and "on" look are pre-computed into data
+        // attributes so handDrawnRsvpWishScript can swap the inner div's
+        // style on click without knowing this theme.
         var attendShapeRole = ATTEND_SHAPE_ROLE_BY_NAME[node.name || ''];
-        if (attendShapeRole && ctx.repeatItem) {
-          var attendEvent = ctx.repeatItem.nama_acara || '';
-          var attendSelected = attendingDefaultFor(ctx, attendEvent) === (attendShapeRole === 'yes');
-          var attendOffStyle = styleStr(Object.assign(
-            { width: '100%', height: '100%', boxSizing: 'border-box', borderRadius: px(node.radius) },
-            resolveFill(node.fill, ctx),
-            node.stroke.width > 0 ? { borderWidth: px(node.stroke.width), borderStyle: node.stroke.style, borderColor: resolveColor(node.stroke.color, ctx.theme) } : {}
-          ));
-          var attendOnStyle = styleStr({
-            width: '100%', height: '100%', boxSizing: 'border-box', borderRadius: px(node.radius),
-            background: ctx.theme.palette.accent, borderWidth: px(node.stroke.width || 1), borderStyle: 'solid', borderColor: ctx.theme.palette.accent
-          });
-          return '<div data-zd2-attend="' + attendShapeRole + '" data-zd2-event="' + escapeHtml(attendEvent) + '"' +
-            ' data-zd2-style-on="' + escapeHtml(attendOnStyle) + '" data-zd2-style-off="' + escapeHtml(attendOffStyle) + '"' +
-            ' data-zd2-selected="' + (attendSelected ? '1' : '0') + '"' +
-            ' style="' + wrapStyle + ';cursor:pointer"><div style="' + (attendSelected ? attendOnStyle : attendOffStyle) + '"></div></div>';
-        }
-        // A partial background ("Card background", pill fills) stretches with the
-        // text that grows inside it - see ZeDocCore.flowBoxes' `stretch`.
-        return '<div' + (/background$/i.test(node.name || '') ? ' data-zd-flow-bg="1"' : '') + ' style="' + wrapStyle + '">' + shapeNodeHtml(node, ctx) + '</div>';
+        if (!attendShapeRole || !ctx.repeatItem) return;
+        var attendEvent = ctx.repeatItem.nama_acara || '';
+        var attendSelected = attendingDefaultFor(ctx, attendEvent) === (attendShapeRole === 'yes');
+        var offStyle = Object.assign(
+          { width: '100%', height: '100%', boxSizing: 'border-box', borderRadius: px(node.radius) },
+          resolveFill(node.fill, ctx),
+          node.stroke.width > 0 ? { borderWidth: px(node.stroke.width), borderStyle: node.stroke.style, borderColor: resolveColor(node.stroke.color, ctx.theme) } : {}
+        );
+        var onStyle = {
+          width: '100%', height: '100%', boxSizing: 'border-box', borderRadius: px(node.radius),
+          background: ctx.theme.palette.accent, borderWidth: px(node.stroke.width || 1), borderStyle: 'solid', borderColor: ctx.theme.palette.accent
+        };
+        return {
+          tag: 'div',
+          attrs: {
+            'data-zd2-attend': attendShapeRole,
+            'data-zd2-event': attendEvent,
+            'data-zd2-style-on': ZeDocCore.styleText(onStyle),
+            'data-zd2-style-off': ZeDocCore.styleText(offStyle),
+            'data-zd2-selected': attendSelected ? '1' : '0'
+          },
+          style: Object.assign({}, wrapStyle, { cursor: 'pointer' }),
+          children: [{ tag: 'div', style: attendSelected ? onStyle : offStyle }]
+        };
       }
-      case 'svg':
-        return '<div style="' + wrapStyle + '">' + svgNodeHtml(node) + '</div>';
+      // No lucide-react catalog in vanilla JS here - deferred, see header.
       case 'icon':
-        // No lucide-react catalog in vanilla JS here — deferred, see header.
-        return '';
+        return { raw: '' };
       case 'block': {
         var renderer = BLOCK_RENDERERS[node.block];
-        return renderer ? '<div style="' + wrapStyle + '">' + renderer(node, ctx) + '</div>' : '';
+        if (!renderer) return { raw: '' };
+        view.children = [{ raw: renderer(node, ctx) }];
+        return;
       }
       case 'group': {
-        // A catalog section's nodes are wrapped into one group on import (see
-        // docs/zedocument-architecture.md) - node.style is the couple's
-        // restyle escape hatch for that group, ported from ze-designer's own
-        // NodeContent.tsx group case. mergeTheme is defined further below;
-        // hoisted function declarations make this forward reference safe.
-        var childCtx = node.style ? Object.assign({}, ctx, {
-          theme: mergeTheme(ctx.theme, node.style),
-          fontStyleOverride: mergeFontStyleOverride(ctx.fontStyleOverride, node.style.fontStyle)
-        }) : ctx;
         // "Wish name input"/"Wish message input" are a decorative background
         // shape + a static placeholder text, same hand-drawn convention as
         // the RSVP buttons above - overlay a real transparent input/textarea
         // (borrowing the placeholder text's own words) instead of touching
-        // the decorative children, and skip clip/eventButtonLinkOverlays
-        // below since these groups never use either.
+        // the decorative children.
         var wishInputRole = WISH_INPUT_ROLE_BY_NAME[node.name || ''];
         if (wishInputRole) {
           var isTextarea = wishInputRole === 'wish-message';
           var placeholderNode = node.children.filter(function (c) { return c.type === 'text'; })[0];
           var placeholderText = placeholderNode ? resolveText(placeholderNode, ctx) : '';
-          var bgHtml = renderChildren(node.children.filter(function (c) { return c.type !== 'text'; }), childCtx);
           var inputTag = isTextarea ? 'textarea' : 'input';
-          var overlayHtml = '<' + inputTag + (isTextarea ? '' : ' type="text"') + ' id="zd2-' + wishInputRole + '"' +
-            ' placeholder="' + escapeHtml(placeholderText) + '" style="' + styleStr({
-              position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', background: 'transparent',
-              outline: 'none', font: 'inherit', color: ctx.theme.palette.ink, padding: px(14), resize: 'none', boxSizing: 'border-box'
-            }) + '"></' + inputTag + '>';
           // wrapStyle already provides position:absolute. It is also the
           // containing block for the transparent input overlay; overriding it
           // with position:relative makes this group participate in flow and
           // overlap the submit button below it.
-          return '<div style="' + wrapStyle + '">' + bgHtml + overlayHtml + '</div>';
+          view.children = ZeDocCore.childViews(node.children.filter(function (c) { return c.type !== 'text'; }), gctx, o.path).concat([{
+            raw: '<' + inputTag + (isTextarea ? '' : ' type="text"') + ' id="zd2-' + wishInputRole + '"' +
+              ' placeholder="' + escapeHtml(placeholderText) + '" style="' + styleStr({
+                position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', background: 'transparent',
+                outline: 'none', font: 'inherit', color: ctx.theme.palette.ink, padding: px(14), resize: 'none', boxSizing: 'border-box'
+              }) + '"></' + inputTag + '>'
+          }]);
+          return;
         }
 
+        var role = INTERACTIVE_GROUP_ROLE_BY_NAME[node.name || ''];
+
         // "Video placeholder" - a permanently-visible "YouTube video embed"
-        // pill, same in the old .dc.html pipeline too (assets/engine.js has
-        // no URL->embed conversion either, just a naive iframe src pass-
-        // through) - a real <iframe> replaces the decorative placeholder
-        // once link_video_youtube parses to an actual video id, otherwise
-        // falls through to the normal (placeholder) rendering below.
-        if (INTERACTIVE_GROUP_ROLE_BY_NAME[node.name || ''] === 'video-embed') {
+        // pill - a real <iframe> replaces the decorative placeholder once
+        // link_video_youtube parses to an actual video id, otherwise it falls
+        // through to the normal (placeholder) rendering.
+        if (role === 'video-embed') {
           var ytEmbed = youTubeEmbedUrl(linkVal(ctx, 'link_video_youtube'));
           if (ytEmbed) {
-            return '<div style="' + wrapStyle + '"><iframe src="' + escapeHtml(ytEmbed) + '" title="Video" style="width:100%;height:100%;border:0"' +
-              ' allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
+            view.children = [{
+              raw: '<iframe src="' + escapeHtml(ytEmbed) + '" title="Video" style="width:100%;height:100%;border:0"' +
+                ' allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>'
+            }];
+            return;
           }
         }
 
         // "Copy button" (inside the Envelope repeat, one per bank account) -
         // copies this item's own account number to the clipboard and shows
         // a zd2Toast() confirmation (handDrawnRsvpWishScript below).
-        if (INTERACTIVE_GROUP_ROLE_BY_NAME[node.name || ''] === 'copy-button' && ctx.repeatItem) {
-          var copyValue = ctx.repeatItem.no_rekening || '';
-          var copyChildrenHtml = renderChildren(node.children, childCtx);
-          return '<div data-zd2-copy-btn data-zd2-copy-value="' + escapeHtml(copyValue) + '" style="' + wrapStyle + ';cursor:pointer">' + copyChildrenHtml + '</div>';
+        if (role === 'copy-button' && ctx.repeatItem) {
+          view.attrs = { 'data-zd2-copy-btn': true, 'data-zd2-copy-value': ctx.repeatItem.no_rekening || '' };
+          view.style = Object.assign({}, wrapStyle, { cursor: 'pointer' });
+          view.children = ZeDocCore.childViews(node.children, gctx, o.path);
+          return;
         }
 
-        var childrenHtml = renderChildren(node.children, childCtx);
-        childrenHtml += eventButtonLinkOverlaysHtml(node, ctx);
+        var overlays = eventButtonLinkOverlaysHtml(node, ctx);
 
         // "RSVP submit button"/"Wish submit button"/"WhatsApp button"/"Join
-        // button" - same hand-drawn convention, matched purely by name
-        // (INTERACTIVE_GROUP_ROLE_BY_NAME above) since none of the 24
-        // catalog templates use the drag-in `rsvp`/`wishes`/`sendGift` Block
-        // components these buttons would otherwise come from (see
-        // BLOCK_RENDERERS below).
-        var interactiveRole = INTERACTIVE_GROUP_ROLE_BY_NAME[node.name || ''];
-        if (interactiveRole === 'rsvp-submit' || interactiveRole === 'wish-submit') {
-          return '<div id="zd2-' + interactiveRole + '" style="' + wrapStyle + ';cursor:pointer">' + childrenHtml + '</div>';
+        // button" - the same hand-drawn convention, matched purely by name
+        // (INTERACTIVE_GROUP_ROLE_BY_NAME above) since none of the catalog
+        // templates use the drag-in `rsvp`/`wishes`/`sendGift` Block components
+        // these buttons would otherwise come from (see BLOCK_RENDERERS below).
+        function plainChildren() {
+          var kids = ZeDocCore.childViews(node.children, gctx, o.path);
+          if (overlays) kids.push({ raw: overlays });
+          return kids;
         }
-        if (interactiveRole === 'wa-button' || interactiveRole === 'live-stream-join') {
-          var linkKey = interactiveRole === 'wa-button' ? 'link_konfirmasi_wa' : 'link_live_streaming';
-          var groupHref = linkVal(ctx, linkKey);
+        if (role === 'rsvp-submit' || role === 'wish-submit') {
+          view.attrs = { id: 'zd2-' + role };
+          view.style = Object.assign({}, wrapStyle, { cursor: 'pointer' });
+          view.children = plainChildren();
+          return;
+        }
+        if (role === 'wa-button' || role === 'live-stream-join') {
+          var groupHref = linkVal(ctx, role === 'wa-button' ? 'link_konfirmasi_wa' : 'link_live_streaming');
           if (groupHref) {
-            return '<a href="' + escapeHtml(groupHref) + '" target="_blank" rel="noopener" style="' + wrapStyle + ';display:block;text-decoration:none">' + childrenHtml + '</a>';
+            return {
+              tag: 'a',
+              attrs: { href: groupHref, target: '_blank', rel: 'noopener' },
+              style: Object.assign({}, wrapStyle, { display: 'block', textDecoration: 'none' }),
+              children: plainChildren()
+            };
           }
         }
 
-        // A "frame" (see doc/frameShapes.ts in ze-designer) - crops its
-        // children to a shape instead of letting them spill past its box.
-        if (node.clip) {
-          var innerStyle = styleStr(Object.assign({ position: 'absolute', inset: '0' }, clipStyleFor(node.clip)));
-          childrenHtml = '<div style="' + innerStyle + '">' + childrenHtml + '</div>';
+        // anything else: any event link overlays go inside the (possibly
+        // cropping) container the core already built
+        if (overlays) {
+          var host = node.clip ? view.children[0] : view;
+          host.children.push({ raw: overlays });
         }
-        return '<div style="' + wrapStyle + '">' + childrenHtml + '</div>';
+        return;
       }
-      case 'repeat': {
-        var items = (ctx.data[node.listKey] || []);
-        // >1 column arranges items as a grid: each item's own internal
-        // layout (every child's frame) stays untouched - the whole item is
-        // scaled down uniformly (see repeatGridPlacements above) instead of
-        // resized field by field, which is what lets this work for a
-        // multi-field card the same way it does for a single photo. Absent/
-        // 1 column keeps the original single-column stack - see
-        // ze-designer/src/render/NodeContent.tsx's matching case.
-        var gridColumns = node.columns || 1;
-        var gridGap = node.gap || 0;
-        var grid = gridColumns > 1
-          ? repeatGridPlacements({ x: frame.x, y: frame.y }, frame.w, frame.h, gridColumns, gridGap, items.length)
-          : null;
-        var html = '';
-        for (var i = 0; i < items.length; i++) {
-          var itemCtx = Object.assign({}, ctx, { repeatItem: items[i], repeatListKey: node.listKey });
-          if (grid) {
-            var placement = grid.placements[i];
-            var itemFrame = Object.assign({}, frame, { x: placement.x, y: placement.y });
-            var itemStyle = frameStyle(itemFrame, node.opacity);
-            itemStyle.transform = 'scale(' + placement.scale + ')';
-            itemStyle.transformOrigin = 'top left';
-            html += '<div style="' + styleStr(itemStyle) + '">' + renderChildren(node.children, itemCtx) + '</div>';
-          } else {
-            var itemFrame = Object.assign({}, frame, { y: frame.y + i * frame.h });
-            html += '<div style="' + styleStr(frameStyle(itemFrame, node.opacity)) + '">' + renderChildren(node.children, itemCtx) + '</div>';
-          }
-        }
-        return html;
-      }
-      default:
-        return '';
     }
+  }
+
+  // The guest page draws through ZeDocCore.nodeView with decorateNode layered on.
+  function renderNode(node, ctx, yOverride, heightGrow) {
+    var view = ZeDocCore.nodeView(node, ctx, { y: yOverride, heightGrow: heightGrow });
+    return view ? ZeDocCore.toHtml(view) : '';
   }
 
   // ponytail: a repeat node's declared frame.h is one item's height; extra
@@ -1281,7 +1235,7 @@
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
     if (artboards.length === 0) artboards = doc.artboards.slice(0, 1);
-    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [] };
+    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode };
 
     // A section's ctx swaps in its own merged theme (mergeTheme) so its
     // colours/fonts pick up ArtboardStyle.tsx's override (section.style) and,
@@ -1303,7 +1257,7 @@
         fontStyleOverride = mergeFontStyleOverride(fontStyleOverride, block.style.fontStyle);
       }
       if (theme === doc.theme && !fontStyleOverride) return ctx;
-      return { theme: theme, data: data, assets: ctx.assets, fontStyleOverride: fontStyleOverride };
+      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride };
     }
 
     var stageWidth = artboards[0].size.w;
@@ -1359,7 +1313,7 @@
     var fontFamilies = collectFontFamilies(doc);
 
     // Ticks every data-zd-cd-unit digit (countdownBlockHtml and
-    // textNodeHtml's 'Countdown number N' override both stamp these,
+    // decorateText's 'Countdown number N' override both stamp these,
     // reading target/unit straight off the element so no shell/grouping is
     // needed here - a no-op querySelectorAll when a doc has no countdown).
     var countdownScript = 'var cdEls=document.querySelectorAll("[data-zd-cd-unit]");' +
@@ -1431,7 +1385,7 @@
       '})();';
 
     // Fullscreen photo viewer for every [data-zd-gallery-src] image
-    // (imageNodeHtml's gallery-repeat case and galleryBlockHtml both stamp
+    // (ZeDocCore.imageView's gallery-repeat case and galleryBlockHtml both stamp
     // that attribute) - one delegated click listener rather than a
     // per-photo inline handler, same "no per-item JS" spirit as the rest of
     // this file's vanilla-JS conventions.
@@ -1521,8 +1475,8 @@
       '})();';
 
     // Same RSVP/wish submission as rsvpWishScript above, but for the
-    // hand-drawn catalog templates' zd2-* hooks (renderNode's 'shape'/
-    // 'group' cases and textNodeHtml's ATTEND_LABEL_ROLE_BY_NAME case).
+    // hand-drawn catalog templates' zd2-* hooks (decorateNode's 'shape'/
+    // 'group' cases and decorateText's ATTEND_LABEL_ROLE_BY_NAME case).
     // slug/guestId live on <body> (data-zd2-slug/-guest-id below) since,
     // unlike the Block-based form, there's no single hand-drawn node to
     // carry them. Status feedback is the zd2Toast() below, not an inline
