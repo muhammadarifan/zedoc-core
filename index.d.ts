@@ -114,7 +114,7 @@ export interface ViewNode {
   /** Trusted markup standing in for the whole view (guest-only pieces). */
   raw?: string
   /** Something only the host can draw (a block, an icon): it gets the node and its context back. */
-  ext?: 'icon' | 'block'
+  ext?: 'block'
   node?: unknown
   ctx?: unknown
 }
@@ -180,6 +180,11 @@ declare const core: {
     ctx: ResolveContext,
   ): ViewNode
   svgView(node: { markup: string }): ViewNode
+  /** The icon catalogue as lucide path data: name -> [tag, attrs][]. */
+  ICONS: Record<string, [string, Record<string, string>][]>
+  /** An icon's svg view, or null for a name outside the catalogue. */
+  iconSvg(name: string, color: string, strokeWidth: number, style?: StyleObject): ViewNode | null
+  iconView(node: { icon: string; strokeWidth: number; color: { kind: string; token?: string; value?: string } }, ctx: ResolveContext): ViewNode | null
   toHtml(view: ViewNode | string, ext?: (view: ViewNode) => string): string
   nodeView(node: any, ctx: ResolveContext, o?: { path?: string; y?: number | null; heightGrow?: number }): ViewNode | null
   contentViews(node: any, ctx: ResolveContext, path: string): ViewNode[]

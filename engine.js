@@ -7,13 +7,15 @@
  * ze-designer/src/render/{resolve.ts,animation.ts,NodeContent.tsx,nodes/*}.
  *
  * v1 scope, deliberately narrow (see the ZeDocument-native template plan):
- *   - Node types: text, image, shape, svg, group, repeat. `icon` nodes render
- *     as an empty box (no lucide catalog ported here). `block` nodes (ze-
- *     designer's higher-level, drag-from-the-Blocks-panel components) are
- *     all supported, one hand-ported function per entry in BLOCK_RENDERERS
- *     below (see render/blocks/*.tsx there for the React source of truth).
- *     Media/icon fidelity is approximate (no lucide catalog here either),
- *     everything else matches the React version's layout and field bindings.
+ *   - Node types: text, image, shape, svg, icon, group, repeat - all drawn by
+ *     ZeDocCore's shared node views (icons from its lucide catalogue, so a
+ *     placed icon shows up for a guest exactly as on the canvas). `block`
+ *     nodes (ze-designer's higher-level, drag-from-the-Blocks-panel
+ *     components) are all supported, one hand-ported function per entry in
+ *     BLOCK_RENDERERS below (see render/blocks/*.tsx there for the React
+ *     source of truth). Media fidelity is approximate (small hand-drawn
+ *     stand-ins for the media blocks' icons), everything else matches the
+ *     React version's layout and field bindings.
  *   - Mostly static visual fidelity. The countdown ticks live (see
  *     countdownScript below) and the Rangkaian Acara "Buka Peta"/"+
  *     Kalender" buttons are real links (see eventButtonLinkOverlaysHtml),
@@ -361,9 +363,8 @@
   }
 
   // Faithful placeholder icons for the media blocks below (MediaBlocks.tsx
-  // uses lucide-react; this has no icon catalog, so these are small hand-
-  // drawn equivalents, not pixel-exact copies - same spirit as the header
-  // comment's "no lucide catalog ported here" for `icon` nodes).
+  // uses lucide-react; these are small hand-drawn equivalents, not pixel-exact
+  // copies - the shared lucide catalogue in ZeDocCore only covers `icon` nodes).
   function iconPlaySvg(color) {
     return '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="' + color + '" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M10 8.5l6 3.5-6 3.5v-7z" fill="' + color + '" stroke="none"/></svg>';
   }
@@ -973,9 +974,6 @@
           children: [{ tag: 'div', style: attendSelected ? onStyle : offStyle }]
         };
       }
-      // No lucide-react catalog in vanilla JS here - deferred, see header.
-      case 'icon':
-        return { raw: '' };
       case 'block': {
         var renderer = BLOCK_RENDERERS[node.block];
         if (!renderer) return { raw: '' };

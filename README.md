@@ -33,3 +33,11 @@ plus the closed data vocabulary (`FIELDS`, `LISTS`). The guest renderer and the
 designer canvas both call these instead of keeping copies. Style values carry
 their units (`'12px'`), so they are valid as React inline style and as CSS text;
 `mapSrc` lets a host rewrite asset urls (the designer prefixes its origin).
+
+## Icons
+
+`ICONS` in `index.js` is the icon catalogue as lucide path data, so an icon node
+(which stores only a name) is drawn identically by the canvas and the guest page
+(`iconView`/`iconSvg`). The block between the `// <icons>` markers is generated:
+edit the list in `ze-designer/scripts/sync-core-icons.mjs`, run
+`npm run sync-icons` there, then commit this repo and bump the pin.

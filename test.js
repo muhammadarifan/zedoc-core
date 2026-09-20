@@ -161,4 +161,18 @@ assert.ok(core.toHtml(core.nodeView(blk, ctx()), (v) => 'EXT:' + v.ext).includes
 // a bare attribute is written without a value
 assert.strictEqual(core.toHtml({ tag: 'div', attrs: { 'data-b': true, id: 'i' }, style: {} }), '<div data-b id="i" style=""></div>')
 
+// --- icons -----------------------------------------------------------------------
+assert.strictEqual(Object.keys(core.ICONS).length, 41)
+const heart = core.iconSvg('Heart', '#c00', 1.5, { width: '100%' })
+assert.deepStrictEqual([heart.attrs.stroke, heart.attrs['stroke-width'], heart.attrs.viewBox], ['#c00', '1.5', '0 0 24 24'])
+assert.strictEqual(core.iconSvg('NotAnIcon', '#000', 2), null)
+assert.strictEqual(core.iconSvg('toString', '#000', 2), null) // catalogue lookups never fall through to Object.prototype
+const inode = { icon: 'Star', strokeWidth: 2, color: { kind: 'token', token: 'accent' } }
+assert.ok(core.toHtml(core.iconView(inode, ctx())).startsWith('<svg xmlns="http://www.w3.org/2000/svg"'))
+assert.ok(core.toHtml(core.iconView(inode, ctx())).includes('stroke="#c00"')) // a theme token resolves
+assert.strictEqual(core.iconView({ ...inode, icon: 'Nope' }, ctx()), null) // an unknown icon draws nothing for a guest...
+assert.ok(core.iconView({ ...inode, icon: 'Nope' }, lctx()).attrs.title.includes('Nope')) // ...and a dashed placeholder on the canvas
+// children without a style object serialise without a style attribute
+assert.ok(!core.toHtml(core.iconSvg('Minus', '#000', 2)).includes('<line style'))
+
 console.log('zedoc-core: ok')
