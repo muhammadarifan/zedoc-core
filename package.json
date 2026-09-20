@@ -4,6 +4,9 @@
   "description": "Framework-free ZeDocument layout runtime and guest-page renderer shared by the designer and be-invitation",
   "license": "UNLICENSED",
   "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
   "types": "index.d.ts",
   "files": [
     "index.js",

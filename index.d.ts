@@ -20,6 +20,21 @@ export interface ReflowResult<T> {
   bgHeightGrow: Record<number, number>
 }
 
+export interface FlowBox {
+  top: number
+  height: number
+  /** A text leaf's real rendered height; the box grows to it, never shrinks. */
+  textHeight?: number
+  /** A partial background: grows with siblings that start inside its span. */
+  stretch?: boolean
+  /** Makes the box a container that grows with its children's flow. */
+  children?: FlowBox[]
+  /** Outputs: final top/height, and this box's own contribution to the shift. */
+  y?: number
+  h?: number
+  grow?: number
+}
+
 interface RepeatNodeLike {
   type: 'repeat'
   listKey: string
@@ -44,6 +59,7 @@ declare const core: {
     gap: number,
     count: number,
   ): GridLayout
+  flowBoxes(boxes: FlowBox[]): { shift: number; bottom: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }
 

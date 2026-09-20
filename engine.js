@@ -1148,7 +1148,9 @@
             ' data-zd2-selected="' + (attendSelected ? '1' : '0') + '"' +
             ' style="' + wrapStyle + ';cursor:pointer"><div style="' + (attendSelected ? attendOnStyle : attendOffStyle) + '"></div></div>';
         }
-        return '<div style="' + wrapStyle + '">' + shapeNodeHtml(node, ctx) + '</div>';
+        // A partial background ("Card background", pill fills) stretches with the
+        // text that grows inside it - see ZeDocCore.flowBoxes' `stretch`.
+        return '<div' + (/background$/i.test(node.name || '') ? ' data-zd-flow-bg="1"' : '') + ' style="' + wrapStyle + '">' + shapeNodeHtml(node, ctx) + '</div>';
       }
       case 'svg':
         return '<div style="' + wrapStyle + '">' + svgNodeHtml(node) + '</div>';
@@ -1549,58 +1551,52 @@
       'el.textContent=String(v).padStart(2,"0");});};cdTick();setInterval(cdTick,1000);}';
 
     // Text nodes are authored with fixed pixel frames, but invitation data can
-    // contain much longer copy than the catalog sample. The canvas measures
-    // this with TextNodeView/scrollHeight; repeat reflow alone cannot see it.
-    // Measure after the real fonts load, grow the affected text wrappers and
-    // shift every later top-level sibling by the same overflow. Without the
-    // second step a wrapped closing title grows visually into the message
-    // below it while the message keeps its authored top coordinate.
+    // contain much longer copy than the catalog sample. Repeat reflow alone
+    // cannot see that, so once the real fonts have loaded this measures every
+    // text node and lets ZeDocCore.flowBoxes (the same function the designer
+    // canvas uses - its source is inlined below) decide what grows and what
+    // shifts. This script is only the DOM adapter: it turns the section's
+    // elements into boxes, and writes the resulting tops/heights back.
     var textReflowScript = '(function(){' +
-      // flow() lays out one container's absolutely-positioned children top to
-      // bottom: a text node that needs more room than authored grows, and
-      // every later sibling shifts down by that overflow. A non-text child
-      // that holds text (a repeat item, a group) is flowed recursively and
-      // grows by whatever its own content overflowed, so a long quote or
-      // event name inside a repeat pushes its neighbours instead of
-      // overprinting them. Returns the container's total growth.
-      'function flow(container){' +
-      'var flowList=Array.prototype.slice.call(container.children).map(function(node,index){' +
-      'var baseTop=node.getAttribute("data-zd-flow-base-top");' +
-      'if(baseTop===null){baseTop=String(parseFloat(node.style.top)||0);node.setAttribute("data-zd-flow-base-top",baseTop);}' +
-      'return {node:node,index:index,top:parseFloat(baseTop)||0};' +
-      '}).sort(function(a,b){return a.top-b.top||a.index-b.index;});' +
-      'var shift=0,bottom=0;' +
-      'flowList.forEach(function(entry){' +
-      'var node=entry.node;' +
-      'node.style.top=(entry.top+shift)+"px";' +
-      'var grow=0;' +
-      'if(node.hasAttribute("data-zd-text-node")){' +
-      'var inner=node.firstElementChild;' +
-      'var base=parseFloat(node.getAttribute("data-zd-base-height"))||0;' +
-      'node.style.height=base+"px";' +
-      'var needed=Math.max(base,inner?inner.scrollHeight:base);' +
-      'if(needed>base)node.style.height=needed+"px";' +
-      'grow=Math.max(0,needed-base);' +
-      '}else if(node.querySelector("[data-zd-text-node]")){' +
-      'var baseH=node.getAttribute("data-zd-flow-base-h");' +
-      'if(baseH===null){baseH=String(parseFloat(node.style.height)||0);node.setAttribute("data-zd-flow-base-h",baseH);}' +
-      'grow=flow(node).shift;' +
-      // a clip wrapper is inset:0 (no authored height) - it has nothing to grow
-      'if(parseFloat(baseH)>0)node.style.height=(parseFloat(baseH)+grow)+"px";' +
+      ZeDocCore.flowBoxes.toString() + ';' +
+      // boxesOf reads the authored (pre-flow) geometry off the elements once,
+      // into data-zd-flow-* attributes, so every later run starts from the
+      // same baseline instead of compounding its own previous result.
+      'function baseAttr(el,name,read){var v=el.getAttribute(name);if(v===null){v=String(read());el.setAttribute(name,v);}return parseFloat(v)||0;}' +
+      'function boxesOf(container){' +
+      'return Array.prototype.map.call(container.children,function(el){' +
+      'var box={el:el,top:baseAttr(el,"data-zd-flow-base-top",function(){return parseFloat(el.style.top)||0;})};' +
+      'if(el.hasAttribute("data-zd-text-node")){' +
+      'box.height=parseFloat(el.getAttribute("data-zd-base-height"))||0;' +
+      // back to the authored height first: scrollHeight never reads below the
+      // box it sits in, so a height left over from an earlier run (e.g. before
+      // the fonts loaded) would otherwise stick as this text's "real" height
+      'el.style.height=box.height+"px";' +
+      'var inner=el.firstElementChild;box.textHeight=inner?inner.scrollHeight:box.height;' +
+      '}else{' +
+      'box.height=baseAttr(el,"data-zd-flow-base-h",function(){return parseFloat(el.style.height)||0;});' +
+      'box.stretch=el.hasAttribute("data-zd-flow-bg");' +
+      'if(el.querySelector("[data-zd-text-node]"))box.children=boxesOf(el);' +
       '}' +
-      'shift+=grow;' +
-      'bottom=Math.max(bottom,entry.top+shift+node.offsetHeight);' +
+      'return box;});' +
+      '}' +
+      'function apply(boxes){' +
+      'boxes.forEach(function(box){' +
+      'box.el.style.top=box.y+"px";' +
+      // an inset:0 clip wrapper has no authored height to grow
+      'if(box.height>0)box.el.style.height=box.h+"px";' +
+      'if(box.children)apply(box.children);' +
       '});' +
-      'return {shift:shift,bottom:bottom};' +
       '}' +
       'function run(){' +
       'var sections=Array.prototype.slice.call(document.querySelectorAll("[data-zd-section-index]"));' +
       'if(!sections.length)return;' +
-      'sections.forEach(function(section){section.style.height=section.getAttribute("data-zd-base-height");});' +
       'var cursor=0;' +
       'sections.forEach(function(section){' +
-      'var height=parseFloat(section.getAttribute("data-zd-base-height"))||section.offsetHeight;' +
-      'height=Math.max(height,flow(section).bottom);' +
+      'var boxes=boxesOf(section);' +
+      'var flowed=flowBoxes(boxes);' +
+      'apply(boxes);' +
+      'var height=Math.max(parseFloat(section.getAttribute("data-zd-base-height"))||0,flowed.bottom);' +
       'section.style.height=height+"px";' +
       'section.style.top=cursor+"px";' +
       'cursor+=height;' +
