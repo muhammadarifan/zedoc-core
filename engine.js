@@ -966,16 +966,23 @@
           var placeholderNode = node.children.filter(function (c) { return c.type === 'text'; })[0];
           var placeholderText = placeholderNode ? resolveText(placeholderNode, ctx) : '';
           var inputTag = isTextarea ? 'textarea' : 'input';
+          // the input types in the placeholder text's own font/size, not the
+          // browser default (a bare <input> would fall back to Times 16px)
+          var inputType = placeholderNode ? {
+            fontFamily: resolveFont(placeholderNode.style.font, ctx.theme),
+            fontSize: px(resolveTextStyle(placeholderNode, ctx).size),
+            fontWeight: resolveTextStyle(placeholderNode, ctx).weight
+          } : { font: 'inherit' };
           // wrapStyle already provides position:absolute. It is also the
           // containing block for the transparent input overlay; overriding it
           // with position:relative makes this group participate in flow and
           // overlap the submit button below it.
           view.children = ZeDocCore.childViews(node.children.filter(function (c) { return c.type !== 'text'; }), gctx, o.path).concat([{
             raw: '<' + inputTag + (isTextarea ? '' : ' type="text"') + ' id="zd2-' + wishInputRole + '"' +
-              ' placeholder="' + escapeHtml(placeholderText) + '" style="' + styleStr({
+              ' placeholder="' + escapeHtml(placeholderText) + '" style="' + styleStr(Object.assign({
                 position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', background: 'transparent',
-                outline: 'none', font: 'inherit', color: ctx.theme.palette.ink, padding: px(14), resize: 'none', boxSizing: 'border-box'
-              }) + '"></' + inputTag + '>'
+                outline: 'none', color: ctx.theme.palette.ink, padding: px(14), resize: 'none', boxSizing: 'border-box'
+              }, inputType)) + '"></' + inputTag + '>'
           }]);
           return;
         }
@@ -1407,7 +1414,7 @@
       'var counts=card.querySelector("[data-zd-counts]");' +
       'if(counts)counts.style.display=attendBtn.getAttribute("data-zd-attend")==="yes"?"flex":"none";' +
       'return;}' +
-      'if(e.target.id==="zd-rsvp-submit"){' +
+      'if(e.target.closest&&e.target.closest("#zd-rsvp-submit")){' +
       'var root=document.querySelector("[data-zd-rsvp-slug]");' +
       'var slug=root?root.getAttribute("data-zd-rsvp-slug"):"",guestId=root?root.getAttribute("data-zd-rsvp-guest"):"";' +
       'var status=document.getElementById("zd-rsvp-status");' +
@@ -1426,7 +1433,7 @@
       '.then(function(r){if(status)status.textContent=r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.";})' +
       '.catch(function(){if(status)status.textContent="Gagal mengirim konfirmasi, periksa koneksi Anda.";});' +
       'return;}' +
-      'if(e.target.id==="zd-wish-submit"){' +
+      'if(e.target.closest&&e.target.closest("#zd-wish-submit")){' +
       'var wroot=document.querySelector("[data-zd-wish-slug]");' +
       'var wslug=wroot?wroot.getAttribute("data-zd-wish-slug"):"";' +
       'var wstatus=document.getElementById("zd-wish-status");' +
@@ -1496,7 +1503,7 @@
       'if(el.hasAttribute("data-zd2-style-on")){el.firstElementChild.style.cssText=el.getAttribute(sel?"data-zd2-style-on":"data-zd2-style-off");}' +
       'else if(el.hasAttribute("data-zd2-color-on")){el.style.color=el.getAttribute(sel?"data-zd2-color-on":"data-zd2-color-off");}' +
       '});return;}' +
-      'if(e.target.id==="zd2-rsvp-submit"){' +
+      'if(e.target.closest&&e.target.closest("#zd2-rsvp-submit")){' +
       'var slug=document.body.getAttribute("data-zd2-slug")||"",guestId=document.body.getAttribute("data-zd2-guest-id")||"";' +
       'if(!slug||!guestId){zd2Toast("Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.");return;}' +
       'var payload={},seen={};' +
@@ -1509,7 +1516,7 @@
       '.then(function(r){zd2Toast(r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.");})' +
       '.catch(function(){zd2Toast("Gagal mengirim konfirmasi, periksa koneksi Anda.");});' +
       'return;}' +
-      'if(e.target.id==="zd2-wish-submit"){' +
+      'if(e.target.closest&&e.target.closest("#zd2-wish-submit")){' +
       'var wslug=document.body.getAttribute("data-zd2-slug")||"";' +
       'var nameEl=document.getElementById("zd2-wish-name"),msgEl=document.getElementById("zd2-wish-message");' +
       'var message=msgEl?msgEl.value.trim():"";' +
