@@ -13,6 +13,37 @@ assert.deepStrictEqual(boxes.map((b) => [b.y, b.h]), [[0, 50], [60, 10], [90, 10
 assert.strictEqual(r.shift, 30)
 assert.strictEqual(r.bottom, 100)
 
+// side-by-side boxes do not push each other (a row of countdown digits), but each
+// pushes what sits under it; a stack of full-width boxes still accumulates
+boxes = [
+  { top: 0, height: 20, textHeight: 30, left: 0, width: 50 }, // grows 10
+  { top: 0, height: 20, textHeight: 30, left: 60, width: 50 }, // grows 10, beside the first
+  { top: 0, height: 20, textHeight: 30, left: 120, width: 50 },
+  { top: 30, height: 10, left: 0, width: 50 }, // under the first only
+  { top: 30, height: 10, left: 120, width: 50 }, // under the third only
+]
+r = flowBoxes(boxes)
+assert.deepStrictEqual(boxes.map((b) => b.y), [0, 0, 0, 40, 40]) // no staircase
+assert.strictEqual(r.shift, 10) // the container grew by how far its lowest content moved
+boxes = [
+  { top: 0, height: 20, textHeight: 30, left: 0, width: 100 }, // full width, grows 10
+  { top: 30, height: 10, left: 0, width: 40 },
+  { top: 30, height: 10, left: 60, width: 40 }, // both columns sit under it
+  { top: 50, height: 10, textHeight: 25, left: 60, width: 40 }, // grows 15 in the right column only
+  { top: 70, height: 10, left: 0, width: 40 }, // left column: moved by the first growth only
+  { top: 70, height: 10, left: 60, width: 40 }, // right column: first growth + its own
+]
+r = flowBoxes(boxes)
+assert.deepStrictEqual(boxes.map((b) => b.y), [0, 40, 40, 60, 80, 95])
+assert.strictEqual(r.shift, 25)
+
+// the guest page inlines flowBoxes' source into its runtime script, so the function must
+// stand alone: rebuilt from its own text with nothing else in scope, it lays out the same
+const standalone = new Function('return ' + flowBoxes.toString())()
+boxes = [{ top: 0, height: 20, textHeight: 30, left: 0, width: 50 }, { top: 0, height: 20, textHeight: 30, left: 60, width: 50 }, { top: 30, height: 10, left: 0, width: 50 }]
+assert.strictEqual(standalone(boxes).shift, 10)
+assert.deepStrictEqual(boxes.map((b) => b.y), [0, 0, 40])
+
 // never shrinks
 boxes = [{ top: 0, height: 40, textHeight: 10 }, { top: 40, height: 10 }]
 flowBoxes(boxes)
@@ -43,6 +74,12 @@ boxes = [card, venue, below]
 flowBoxes(boxes)
 assert.strictEqual(card.h, 140)
 assert.strictEqual(below.y, 160)
+
+// a timeline line beside a growing story stretches with it, and does not push its neighbours
+const connector = { top: 22, height: 126, stretch: true, left: 6, width: 1 }
+const story = { top: 36, height: 78, textHeight: 300, left: 32, width: 346 }
+flowBoxes([connector, story])
+assert.strictEqual(connector.h, 126 + 222)
 
 // a stretch box never itself pushes anything
 boxes = [{ top: 0, height: 10, stretch: true, textHeight: 99 }, { top: 10, height: 10 }]
@@ -183,7 +220,9 @@ assert.strictEqual(core.guestRole({ name: 'toString', type: 'group' }), null) //
 assert.strictEqual(core.guestRole({ name: 'Map button', type: 'shape' }).role, 'map-button') // '*' matches any type
 assert.strictEqual(core.guestRole({ name: 'Countdown number 3', type: 'text' }).arg, 'm')
 assert.strictEqual(new Set(core.GUEST_ROLES.map((entry) => entry.name)).size, core.GUEST_ROLES.length) // a name maps to one role
-assert.ok(core.isStretchBackground({ name: 'Card background', type: 'shape' }))
-assert.ok(!core.isStretchBackground({ name: 'Card background', type: 'text' }) && !core.isStretchBackground({ name: 'Card', type: 'shape' }))
+assert.ok(core.isStretchShape({ name: 'Card background', type: 'shape' }))
+assert.ok(!core.isStretchShape({ name: 'Card background', type: 'text' }) && !core.isStretchShape({ name: 'Card', type: 'shape' }))
+assert.ok(core.isStretchShape({ name: 'Timeline line', type: 'shape' })) // the connector beside a growing story stretches with it
+assert.ok(!core.isStretchShape({ name: 'Timeline dot', type: 'shape' }))
 
 console.log('zedoc-core: ok')

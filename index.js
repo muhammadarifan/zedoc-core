@@ -65,7 +65,7 @@
 
     var bgHeightGrow = {};
     nodes.forEach(function (node, i) {
-      if (!isStretchBackground(node)) return;
+      if (!isStretchShape(node)) return;
       var y0 = node.frame.y;
       var y1 = y0 + node.frame.h;
       var grow = 0;
@@ -94,21 +94,39 @@
    *   - stretch: a partial background (card, pill). It grows by the growth of
    *     the siblings that start inside its own [top, top+height) span, so a
    *     card still wraps its text - same rule reflowNodes applies to repeats.
-   * Boxes are laid out top to bottom by `top` (ties keep array order). Every
-   * later sibling shifts down by the growth above it, whatever its x.
+   * Boxes are laid out top to bottom by `top`. A box shifts down by the growth
+   * above it in its own columns (`left`/`width`, when given): side-by-side boxes
+   * do not push each other, a stack of full-width boxes accumulates.
    *
    * Writes `y` and `h` (final top and height) onto each box, recursively, and
-   * returns { shift, bottom }: the container's total growth and the lowest
-   * edge of its content.
+   * returns { shift, bottom }: how far the container's lowest content moved
+   * (its growth) and the lowest edge of its content.
    */
   function flowBoxes(boxes) {
+    // boxes without a known x-range are treated as spanning every column
+    function overlapsX(a, b) {
+      if (a.left == null || b.left == null || !(a.width > 0) || !(b.width > 0)) return true;
+      return Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left) > 1;
+    }
     var order = boxes.map(function (box, index) { return { box: box, index: index }; })
       .sort(function (a, b) { return a.box.top - b.box.top || a.index - b.index; });
-    var shift = 0;
+    var placed = [];
+    var reach = 0;
     var bottom = 0;
     order.forEach(function (entry) {
       var box = entry.box;
+      // A box moves down by however far the boxes above it that share its
+      // columns moved (their own shift plus their growth) - so side-by-side
+      // boxes (countdown digits, a row of buttons) each grow on their own
+      // instead of pushing each other down like steps of a staircase, while a
+      // stack of full-width boxes still accumulates exactly as before.
+      var shift = 0;
+      for (var i = 0; i < placed.length; i++) {
+        var above = placed[i];
+        if (above.top < box.top && overlapsX(above, box)) shift = Math.max(shift, above.shift + above.grow);
+      }
       var grow = 0;
+      box.shift = shift;
       box.y = box.top + shift;
       box.h = box.height;
       if (box.children) {
@@ -117,8 +135,11 @@
         grow = box.textHeight - box.height;
       }
       box.grow = box.stretch ? 0 : grow;
-      if (!box.stretch) box.h = box.height + grow;
-      shift += box.grow;
+      if (!box.stretch) {
+        box.h = box.height + grow;
+        placed.push(box);
+        reach = Math.max(reach, shift + grow);
+      }
     });
     boxes.forEach(function (box) {
       if (!box.stretch) return;
@@ -129,7 +150,7 @@
       box.h = box.height + extra;
     });
     boxes.forEach(function (box) { bottom = Math.max(bottom, box.y + box.h); });
-    return { shift: shift, bottom: bottom };
+    return { shift: reach, bottom: bottom };
   }
 
   // ---------------------------------------------------------------------
@@ -363,12 +384,14 @@
   }
 
   /**
-   * A partial background ("Card background", a button's pill): a shape named
-   * "<Something> background". It stretches with the text that grows inside it
-   * (see flowBoxes) and, for a repeat, with the items inside its span.
+   * A shape that stretches with the text growing beside/inside it: a partial
+   * background ("Card background", a button's pill) named "<Something>
+   * background", or a timeline's connector line ("Timeline line"), whose span
+   * covers the story text next to it. It grows with the siblings that start
+   * inside its span (see flowBoxes) and, for a repeat, with the items inside it.
    */
-  function isStretchBackground(node) {
-    return node.type === 'shape' && /background$/i.test(node.name || '');
+  function isStretchShape(node) {
+    return node.type === 'shape' && /(background|^timeline line)$/i.test(node.name || '');
   }
 
   /**
@@ -845,7 +868,7 @@
     if (node.type === 'text') {
       attrs['data-zd-text-node'] = node.id;
       attrs['data-zd-base-height'] = px(node.frame.h);
-    } else if (isStretchBackground(node)) {
+    } else if (isStretchShape(node)) {
       // a partial background stretches with the text that grows inside it
       attrs['data-zd-flow-bg'] = '1';
     }
@@ -862,7 +885,7 @@
     findAsset: findAsset, resolveFill: resolveFill, resolveText: resolveText, bucketFor: bucketFor,
     resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor,
     textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml,
-    GUEST_ROLES: GUEST_ROLES, guestRole: guestRole, isStretchBackground: isStretchBackground,
+    GUEST_ROLES: GUEST_ROLES, guestRole: guestRole, isStretchShape: isStretchShape,
     iconSvg: iconSvg, iconView: iconView, ICONS: ICONS,
     nodeView: nodeView, groupCtx: groupCtx, childViews: childViews, repeatItemViews: repeatItemViews, contentViews: contentViews,
     childPath: childPath, itemPath: itemPath, COUPLE_FIELD_REMAP: COUPLE_FIELD_REMAP, eventUnboundTextKey: eventUnboundTextKey

@@ -1310,14 +1310,18 @@
       'function baseAttr(el,name,read){var v=el.getAttribute(name);if(v===null){v=String(read());el.setAttribute(name,v);}return parseFloat(v)||0;}' +
       'function boxesOf(container){' +
       'return Array.prototype.map.call(container.children,function(el){' +
-      'var box={el:el,top:baseAttr(el,"data-zd-flow-base-top",function(){return parseFloat(el.style.top)||0;})};' +
+      'var box={el:el,top:baseAttr(el,"data-zd-flow-base-top",function(){return parseFloat(el.style.top)||0;}),left:parseFloat(el.style.left)||0,width:parseFloat(el.style.width)||0};' +
       'if(el.hasAttribute("data-zd-text-node")){' +
       'box.height=parseFloat(el.getAttribute("data-zd-base-height"))||0;' +
-      // back to the authored height first: scrollHeight never reads below the
-      // box it sits in, so a height left over from an earlier run (e.g. before
-      // the fonts loaded) would otherwise stick as this text's "real" height
+      // Measure the text's layout height: its own box with the height released
+      // (offsetHeight = the wrapped lines at their line-height). Not scrollHeight -
+      // that also counts a font's tall glyph metrics overflowing the line box, so
+      // a one-line script-font digit read as 19px "taller" than it really is. The
+      // wrapper goes back to its authored height first so an earlier run (before
+      // the fonts loaded) cannot stick as this text's height.
       'el.style.height=box.height+"px";' +
-      'var inner=el.firstElementChild;box.textHeight=inner?inner.scrollHeight:box.height;' +
+      'var inner=el.firstElementChild;' +
+      'if(inner){var prevH=inner.style.height;inner.style.height="auto";box.textHeight=inner.offsetHeight;inner.style.height=prevH;}else box.textHeight=box.height;' +
       '}else{' +
       'box.height=baseAttr(el,"data-zd-flow-base-h",function(){return parseFloat(el.style.height)||0;});' +
       'box.stretch=el.hasAttribute("data-zd-flow-bg");' +

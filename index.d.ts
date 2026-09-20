@@ -29,8 +29,12 @@ export interface FlowBox {
   stretch?: boolean
   /** Makes the box a container that grows with its children's flow. */
   children?: FlowBox[]
-  /** Outputs: final top/height, and this box's own contribution to the shift. */
+  /** Column of the box (for the flow); absent = spans every column. */
+  left?: number
+  width?: number
+  /** Outputs: final top/height, how far it moved, and how much it grew. */
   y?: number
+  shift?: number
   h?: number
   grow?: number
 }
@@ -134,7 +138,7 @@ declare const core: {
   /** The names the guest page recognises to make hand-drawn elements live. */
   GUEST_ROLES: GuestRole[]
   guestRole(node: { name?: string; type: string }): GuestRole | null
-  isStretchBackground(node: { name?: string; type: string }): boolean
+  isStretchShape(node: { name?: string; type: string }): boolean
   FIELDS: FieldDef[]
   LISTS: ListDef[]
   findField(key: string): FieldDef | undefined
