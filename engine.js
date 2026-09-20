@@ -171,40 +171,10 @@
   // (hand-authored, no builder script) names them "Countdown days/hours/
   // minutes/seconds number" instead - both need to resolve to the same
   // d/h/m/s unit key.
-  var COUNTDOWN_NUMBER_RE = /^Countdown number ([1-4])$/;
-  var COUNTDOWN_UNIT_KEYS = ['d', 'h', 'm', 's'];
-  var COUNTDOWN_UNIT_BY_NAME = {
-    'Countdown days number': 'd',
-    'Countdown hours number': 'h',
-    'Countdown minutes number': 'm',
-    'Countdown seconds number': 's'
-  };
 
-  // ("Envelope names"/"Cover names"/"Closing names" show the couple's real
-  // names via ZeDocCore.resolveText.)
-
-  // Every catalog template hand-draws its RSVP/Wishes/gift sections as plain
-  // text/shape/group/repeat nodes (built per-template by scripts/zedoc-
-  // builder/build-*.mjs) rather than using the drag-in `rsvp`/`wishes`/
-  // `sendGift` Block components below - none of the 24 shipped templates use
-  // those blocks at all today. The node NAMES those build scripts use are,
-  // however, consistent across all 24 (spot-checked; evergreen's own
-  // grandchild decoration names differ slightly but these top-level ones
-  // match) - same "match by name, stamp a data-zd2-* hook" trick as
-  // COUNTDOWN_UNIT_BY_NAME above, extended to these interactive elements so
-  // the actual shipped templates' RSVP/wish/WA buttons work, not just a
-  // custom document built from Blocks.
-  var ATTEND_SHAPE_ROLE_BY_NAME = { 'Yes button': 'yes', 'No button': 'no' };
-  var ATTEND_LABEL_ROLE_BY_NAME = { 'Yes label': 'yes', 'No label': 'no' };
-  var INTERACTIVE_GROUP_ROLE_BY_NAME = {
-    'RSVP submit button': 'rsvp-submit',
-    'Wish submit button': 'wish-submit',
-    'WhatsApp button': 'wa-button',
-    'Join button': 'live-stream-join',
-    'Video placeholder': 'video-embed',
-    'Copy button': 'copy-button'
-  };
-  var WISH_INPUT_ROLE_BY_NAME = { 'Wish name input': 'wish-name', 'Wish message input': 'wish-message' };
+  // Which hand-drawn nodes are made live (RSVP, wishes, copy, links, countdown
+  // digits...) is decided by ZeDocCore.guestRole - the one table of node names
+  // the template validator checks too.
 
   // Turns a pasted YouTube URL (watch/share/shorts/already-an-embed link)
   // into a proper embed src. Unlike the WA/live-streaming buttons above,
@@ -243,8 +213,8 @@
     var text = textView.children[0];
     var attrs = {};
 
-    var cdMatch = COUNTDOWN_NUMBER_RE.exec(node.name || '');
-    var cdKey = cdMatch ? COUNTDOWN_UNIT_KEYS[Number(cdMatch[1]) - 1] : COUNTDOWN_UNIT_BY_NAME[node.name || ''];
+    var textRole = ZeDocCore.guestRole(node);
+    var cdKey = textRole && textRole.role === 'countdown' ? textRole.arg : null;
     if (cdKey && ctx.data.countdownDatetime) {
       var key = cdKey;
       text = String(countdownRemaining(ctx.data.countdownDatetime)[key]).padStart(2, '0');
@@ -253,7 +223,7 @@
     }
     // The static "Nama Tamu" placeholder becomes the real guest's name once
     // known - same idea as the combined-couple-name fix above.
-    if (!node.binding && node.name === 'RSVP name value' && ctx.data.guestName) {
+    if (!node.binding && textRole && textRole.role === 'guest-name' && ctx.data.guestName) {
       text = ctx.data.guestName;
     }
     // "Yes label"/"No label" (inside the RSVP event-cards repeat) pair with
@@ -263,7 +233,7 @@
     // both on click, keyed by data-zd2-event so it can find the sibling to
     // turn back off. attendingDefaultFor mirrors assets/engine.js's own
     // attendingFor() default.
-    var attendRole = ATTEND_LABEL_ROLE_BY_NAME[node.name || ''];
+    var attendRole = textRole && textRole.role === 'attend-label' ? textRole.arg : null;
     if (attendRole && ctx.repeatItem) {
       var evName = ctx.repeatItem.nama_acara || '';
       var selected = attendingDefaultFor(ctx, evName) === (attendRole === 'yes');
@@ -911,17 +881,19 @@
   }
 
   function eventButtonLinkOverlaysHtml(node, ctx) {
-    if (node.name !== 'Event buttons' || !ctx.repeatItem) return '';
+    var buttonsRole = ZeDocCore.guestRole(node);
+    if (!buttonsRole || buttonsRole.role !== 'event-buttons' || !ctx.repeatItem) return '';
     var event = ctx.repeatItem;
     var html = '';
     node.children.forEach(function (child) {
-      if (child.name === 'Map button') {
+      var childRole = ZeDocCore.guestRole(child);
+      if (childRole && childRole.role === 'map-button') {
         if (!hasRealMapHref(event)) return;
         var linkStyle = styleStr(Object.assign(frameStyle(child.frame), { display: 'block' }));
         html += '<a href="' + escapeHtml(event.map_href) + '" target="_blank" rel="noopener" style="' + linkStyle + '"></a>';
         return;
       }
-      if (child.name === 'Calendar button') {
+      if (childRole && childRole.role === 'calendar-button') {
         var icsHref = buildIcsDataUri(event);
         var gcalHref = buildGoogleCalendarUrl(event);
         if (!icsHref && !gcalHref) return;
@@ -942,13 +914,14 @@
         decorateText(node, view, ctx);
         return;
       case 'shape': {
-        // "Yes button"/"No button" (see ATTEND_SHAPE_ROLE_BY_NAME above) pair
+        // "Yes button"/"No button" (see ZeDocCore.GUEST_ROLES) pair
         // with their own text label siblings (decorateText's matching
-        // ATTEND_LABEL_ROLE_BY_NAME case) to form one attendance toggle -
+        // 'attend-label' role) to form one attendance toggle -
         // both the "off" (normal) and "on" look are pre-computed into data
         // attributes so handDrawnRsvpWishScript can swap the inner div's
         // style on click without knowing this theme.
-        var attendShapeRole = ATTEND_SHAPE_ROLE_BY_NAME[node.name || ''];
+        var shapeRole = ZeDocCore.guestRole(node);
+        var attendShapeRole = shapeRole && shapeRole.role === 'attend-shape' ? shapeRole.arg : null;
         if (!attendShapeRole || !ctx.repeatItem) return;
         var attendEvent = ctx.repeatItem.nama_acara || '';
         var attendSelected = attendingDefaultFor(ctx, attendEvent) === (attendShapeRole === 'yes');
@@ -986,7 +959,8 @@
         // the RSVP buttons above - overlay a real transparent input/textarea
         // (borrowing the placeholder text's own words) instead of touching
         // the decorative children.
-        var wishInputRole = WISH_INPUT_ROLE_BY_NAME[node.name || ''];
+        var groupRole = ZeDocCore.guestRole(node);
+        var wishInputRole = groupRole && groupRole.role === 'wish-input' ? groupRole.arg : null;
         if (wishInputRole) {
           var isTextarea = wishInputRole === 'wish-message';
           var placeholderNode = node.children.filter(function (c) { return c.type === 'text'; })[0];
@@ -1006,7 +980,7 @@
           return;
         }
 
-        var role = INTERACTIVE_GROUP_ROLE_BY_NAME[node.name || ''];
+        var role = groupRole ? groupRole.role : undefined;
 
         // "Video placeholder" - a permanently-visible "YouTube video embed"
         // pill - a real <iframe> replaces the decorative placeholder once
@@ -1037,7 +1011,7 @@
 
         // "RSVP submit button"/"Wish submit button"/"WhatsApp button"/"Join
         // button" - the same hand-drawn convention, matched purely by name
-        // (INTERACTIVE_GROUP_ROLE_BY_NAME above) since none of the catalog
+        // (ZeDocCore.GUEST_ROLES) since none of the catalog
         // templates use the drag-in `rsvp`/`wishes`/`sendGift` Block components
         // these buttons would otherwise come from (see BLOCK_RENDERERS below).
         function plainChildren() {
@@ -1474,7 +1448,7 @@
 
     // Same RSVP/wish submission as rsvpWishScript above, but for the
     // hand-drawn catalog templates' zd2-* hooks (decorateNode's 'shape'/
-    // 'group' cases and decorateText's ATTEND_LABEL_ROLE_BY_NAME case).
+    // 'group' cases and decorateText's 'attend-label' role).
     // slug/guestId live on <body> (data-zd2-slug/-guest-id below) since,
     // unlike the Block-based form, there's no single hand-drawn node to
     // carry them. Status feedback is the zd2Toast() below, not an inline

@@ -175,4 +175,15 @@ assert.ok(core.iconView({ ...inode, icon: 'Nope' }, lctx()).attrs.title.includes
 // children without a style object serialise without a style attribute
 assert.ok(!core.toHtml(core.iconSvg('Minus', '#000', 2)).includes('<line style'))
 
+// --- guest roles + stretch backgrounds ------------------------------------------
+assert.deepStrictEqual(core.guestRole({ name: 'RSVP submit button', type: 'group' }), { name: 'RSVP submit button', type: 'group', role: 'rsvp-submit' })
+assert.strictEqual(core.guestRole({ name: 'RSVP submit button', type: 'text' }), null) // wrong type: the guest page ignores it
+assert.strictEqual(core.guestRole({ name: 'RSVP Submit Button', type: 'group' }), null) // names are exact
+assert.strictEqual(core.guestRole({ name: 'toString', type: 'group' }), null) // never falls through to Object.prototype
+assert.strictEqual(core.guestRole({ name: 'Map button', type: 'shape' }).role, 'map-button') // '*' matches any type
+assert.strictEqual(core.guestRole({ name: 'Countdown number 3', type: 'text' }).arg, 'm')
+assert.strictEqual(new Set(core.GUEST_ROLES.map((entry) => entry.name)).size, core.GUEST_ROLES.length) // a name maps to one role
+assert.ok(core.isStretchBackground({ name: 'Card background', type: 'shape' }))
+assert.ok(!core.isStretchBackground({ name: 'Card background', type: 'text' }) && !core.isStretchBackground({ name: 'Card', type: 'shape' }))
+
 console.log('zedoc-core: ok')

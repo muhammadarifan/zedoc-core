@@ -119,7 +119,22 @@ export interface ViewNode {
   ctx?: unknown
 }
 
+export interface GuestRole {
+  name: string
+  /** The node type the role applies to ('*' = any). */
+  type: string
+  role: string
+  /** Which one of a pair (yes/no, the countdown unit, the input). */
+  arg?: string
+  /** A template may legitimately use the name for something else; validators do not police it. */
+  optional?: boolean
+}
+
 declare const core: {
+  /** The names the guest page recognises to make hand-drawn elements live. */
+  GUEST_ROLES: GuestRole[]
+  guestRole(node: { name?: string; type: string }): GuestRole | null
+  isStretchBackground(node: { name?: string; type: string }): boolean
   FIELDS: FieldDef[]
   LISTS: ListDef[]
   findField(key: string): FieldDef | undefined

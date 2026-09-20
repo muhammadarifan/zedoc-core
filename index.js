@@ -65,7 +65,7 @@
 
     var bgHeightGrow = {};
     nodes.forEach(function (node, i) {
-      if (node.type !== 'shape' || !/background$/i.test(node.name || '')) return;
+      if (!isStretchBackground(node)) return;
       var y0 = node.frame.y;
       var y1 = y0 + node.frame.h;
       var grow = 0;
@@ -305,11 +305,71 @@
     }
   }
 
-  // Most catalog templates bake the combined "Groom & Bride" line as one
-  // unbound text node with static sample text - there is no single field for
-  // a two-name line to bind to - so these three node names show the couple's
-  // real names instead of the baked ones.
-  var COMBINED_COUPLE_NAME_NODES = { 'Envelope names': 1, 'Cover names': 1, 'Closing names': 1 };
+  // ---------------------------------------------------------------------
+  // Guest roles. Every catalog template hand-draws its RSVP, wishes, gift and
+  // countdown sections as plain text/shape/group nodes; the guest page makes
+  // them live (click handlers, real links and inputs, ticking digits) by
+  // recognising the node's NAME and type. This table is the one list of those
+  // names - the engine reads it, and the template validator checks templates
+  // against it, so a misspelt name (the element still looks right but silently
+  // does nothing) is caught before it ships. Names are internal labels: they
+  // never appear on the invitation page.
+  //
+  //   role      what the guest page does with the node
+  //   arg       which one of a pair (yes/no, the countdown unit, the input)
+  //   type      the node type the role applies to ('*' = any)
+  //   optional  a template may legitimately use the name for something else (a
+  //             group holding the two names) - validators do not police it
+  // ---------------------------------------------------------------------
+  var GUEST_ROLES = [
+    { name: 'Countdown number 1', type: 'text', role: 'countdown', arg: 'd' },
+    { name: 'Countdown number 2', type: 'text', role: 'countdown', arg: 'h' },
+    { name: 'Countdown number 3', type: 'text', role: 'countdown', arg: 'm' },
+    { name: 'Countdown number 4', type: 'text', role: 'countdown', arg: 's' },
+    { name: 'Countdown days number', type: 'text', role: 'countdown', arg: 'd' },
+    { name: 'Countdown hours number', type: 'text', role: 'countdown', arg: 'h' },
+    { name: 'Countdown minutes number', type: 'text', role: 'countdown', arg: 'm' },
+    { name: 'Countdown seconds number', type: 'text', role: 'countdown', arg: 's' },
+    { name: 'RSVP name value', type: 'text', role: 'guest-name' },
+    { name: 'Yes button', type: 'shape', role: 'attend-shape', arg: 'yes' },
+    { name: 'No button', type: 'shape', role: 'attend-shape', arg: 'no' },
+    { name: 'Yes label', type: 'text', role: 'attend-label', arg: 'yes' },
+    { name: 'No label', type: 'text', role: 'attend-label', arg: 'no' },
+    { name: 'RSVP submit button', type: 'group', role: 'rsvp-submit' },
+    { name: 'Wish submit button', type: 'group', role: 'wish-submit' },
+    { name: 'WhatsApp button', type: 'group', role: 'wa-button' },
+    { name: 'Join button', type: 'group', role: 'live-stream-join' },
+    { name: 'Video placeholder', type: 'group', role: 'video-embed' },
+    { name: 'Copy button', type: 'group', role: 'copy-button' },
+    { name: 'Wish name input', type: 'group', role: 'wish-input', arg: 'wish-name' },
+    { name: 'Wish message input', type: 'group', role: 'wish-input', arg: 'wish-message' },
+    { name: 'Event buttons', type: 'group', role: 'event-buttons' },
+    { name: 'Map button', type: '*', role: 'map-button' },
+    { name: 'Calendar button', type: '*', role: 'calendar-button' },
+    // most catalog templates bake the combined "Groom & Bride" line as one
+    // unbound text node - there is no single field for a two-name line to bind to
+    { name: 'Envelope names', type: 'text', role: 'couple-names', optional: true },
+    { name: 'Cover names', type: 'text', role: 'couple-names', optional: true },
+    { name: 'Closing names', type: 'text', role: 'couple-names', optional: true }
+  ];
+
+  var GUEST_ROLE_BY_NAME = {};
+  GUEST_ROLES.forEach(function (entry) { GUEST_ROLE_BY_NAME[entry.name] = entry; });
+
+  /** The guest role a node plays ({ name, type, role, arg? }), or null. */
+  function guestRole(node) {
+    var entry = Object.prototype.hasOwnProperty.call(GUEST_ROLE_BY_NAME, node.name || '') ? GUEST_ROLE_BY_NAME[node.name] : null;
+    return entry && (entry.type === '*' || entry.type === node.type) ? entry : null;
+  }
+
+  /**
+   * A partial background ("Card background", a button's pill): a shape named
+   * "<Something> background". It stretches with the text that grows inside it
+   * (see flowBoxes) and, for a repeat, with the items inside its span.
+   */
+  function isStretchBackground(node) {
+    return node.type === 'shape' && /background$/i.test(node.name || '');
+  }
 
   /**
    * The text a node shows. A bound node ignores its own text and reads the
@@ -318,7 +378,8 @@
    */
   function resolveText(node, ctx) {
     var fields = ctx.data.fields || {};
-    if (!node.binding && COMBINED_COUPLE_NAME_NODES[node.name || '']) {
+    var role = guestRole(node);
+    if (!node.binding && role && role.role === 'couple-names') {
       return (fields.nama_panggilan_mempelai_1 || 'Bagas') + ' & ' + (fields.nama_panggilan_mempelai_2 || 'Larasati');
     }
     if (!node.binding || ctx.preferLiteralText) return node.text;
@@ -784,7 +845,7 @@
     if (node.type === 'text') {
       attrs['data-zd-text-node'] = node.id;
       attrs['data-zd-base-height'] = px(node.frame.h);
-    } else if (node.type === 'shape' && /background$/i.test(node.name || '')) {
+    } else if (isStretchBackground(node)) {
       // a partial background stretches with the text that grows inside it
       attrs['data-zd-flow-bg'] = '1';
     }
@@ -801,6 +862,7 @@
     findAsset: findAsset, resolveFill: resolveFill, resolveText: resolveText, bucketFor: bucketFor,
     resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor,
     textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml,
+    GUEST_ROLES: GUEST_ROLES, guestRole: guestRole, isStretchBackground: isStretchBackground,
     iconSvg: iconSvg, iconView: iconView, ICONS: ICONS,
     nodeView: nodeView, groupCtx: groupCtx, childViews: childViews, repeatItemViews: repeatItemViews, contentViews: contentViews,
     childPath: childPath, itemPath: itemPath, COUPLE_FIELD_REMAP: COUPLE_FIELD_REMAP, eventUnboundTextKey: eventUnboundTextKey
