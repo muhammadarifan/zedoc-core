@@ -85,7 +85,22 @@ export interface ResolveContext {
   assets: { id: string; src: string }[]
   repeatItem?: Record<string, unknown> | null
   preferLiteralText?: boolean
+  /** Rewrites an asset/image url on its way out (the designer prefixes its origin). */
+  mapSrc?: (src: string) => string
+  /** 'gallery' marks a photo for the guest page's lightbox. */
+  repeatListKey?: string
   fontStyleOverride?: Record<string, { size?: number; weight?: number; italic?: boolean; underline?: boolean } | undefined>
+}
+
+/** A neutral view tree: hosts serialise it (toHtml) or map it to their own elements. */
+export interface ViewNode {
+  tag: string
+  /** Insertion order is the serialised attribute order. */
+  attrs?: Record<string, string>
+  style?: StyleObject
+  children?: (ViewNode | string)[]
+  /** Raw markup for the element's content (imported SVG). */
+  html?: string
 }
 
 declare const core: {
@@ -113,6 +128,45 @@ declare const core: {
   ): string | null
   frameStyle(frame: { x: number; y: number; w: number; h: number; rotate?: number; flipX?: boolean; flipY?: boolean }, opacity: number): StyleObject
   clipStyleFor(clip: { shape: string; radius?: number; polygon?: string }): StyleObject
+  /** `autoHeight` keeps the box at its content height (the canvas measures it) instead of filling the frame. */
+  textView(
+    node: {
+      name?: string
+      text: string
+      binding?: { key: string } | null
+      style: {
+        font: { kind: string; token?: string; family?: string }
+        size: number
+        weight: number
+        lineHeight: number
+        letterSpacing: number
+        align: string
+        color: { kind: string; token?: string; value?: string }
+        italic: boolean
+        underline: boolean
+        transform: string
+      }
+    },
+    ctx: ResolveContext,
+    opts?: { autoHeight?: boolean },
+  ): ViewNode
+  imageView(
+    node: { binding?: { key: string } | null; assetId: string | null; radius: number; alt: string; fit: string },
+    ctx: ResolveContext,
+  ): ViewNode
+  shapeView(
+    node: {
+      shape: string
+      radius: number
+      fill: { kind: string }
+      stroke: { width: number; style: string; color: { kind: string; token?: string; value?: string } }
+    },
+    ctx: ResolveContext,
+  ): ViewNode
+  svgView(node: { markup: string }): ViewNode
+  toHtml(view: ViewNode | string): string
+  styleText(style: StyleObject): string
+  escapeHtml(value: unknown): string
 
   repeatGridPlacements(
     origin: { x: number; y: number },

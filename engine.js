@@ -229,32 +229,22 @@
 
   // --- node views (TextNodeView/ImageNodeView/ShapeNodeView/SvgNodeView) ---
 
+  // The base text view (font, size, colour, wrapping) is ZeDocCore.textView, the
+  // same one the designer canvas draws; everything below is guest-only: live
+  // countdown digits, the real guest's name, the attendance toggle hooks.
   function textNodeHtml(node, ctx) {
-    var effective = resolveTextStyle(node, ctx);
-    var style = {
-      fontFamily: resolveFont(node.style.font, ctx.theme),
-      fontSize: px(effective.size),
-      fontWeight: effective.weight,
-      lineHeight: node.style.lineHeight,
-      letterSpacing: px(node.style.letterSpacing),
-      textAlign: node.style.align,
-      color: resolveColor(node.style.color, ctx.theme),
-      fontStyle: effective.italic ? 'italic' : 'normal',
-      textDecoration: effective.underline ? 'underline' : 'none',
-      textTransform: node.style.transform === 'none' ? undefined : node.style.transform,
-      width: '100%',
-      height: '100%',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word'
-    };
-    var text = resolveText(node, ctx);
-    var attrs = '';
+    var view = ZeDocCore.textView(node, ctx);
+    var style = view.style;
+    var text = view.children[0];
+    var attrs = {};
+
     var cdMatch = COUNTDOWN_NUMBER_RE.exec(node.name || '');
     var cdKey = cdMatch ? COUNTDOWN_UNIT_KEYS[Number(cdMatch[1]) - 1] : COUNTDOWN_UNIT_BY_NAME[node.name || ''];
     if (cdKey && ctx.data.countdownDatetime) {
       var key = cdKey;
       text = String(countdownRemaining(ctx.data.countdownDatetime)[key]).padStart(2, '0');
-      attrs = ' data-zd-cd-unit="' + key + '" data-zd-cd-target="' + escapeHtml(String(ctx.data.countdownDatetime)) + '"';
+      attrs['data-zd-cd-unit'] = key;
+      attrs['data-zd-cd-target'] = String(ctx.data.countdownDatetime);
     }
     // The static "Nama Tamu" placeholder becomes the real guest's name once
     // known - same idea as the combined-couple-name fix above.
@@ -276,11 +266,15 @@
       var colorOn = ctx.theme.palette.accentInk;
       if (selected) style.color = colorOn;
       style.cursor = 'pointer';
-      attrs += ' data-zd2-attend="' + attendRole + '" data-zd2-event="' + escapeHtml(evName) + '"' +
-        ' data-zd2-color-on="' + escapeHtml(colorOn) + '" data-zd2-color-off="' + escapeHtml(colorOff) + '"' +
-        ' data-zd2-selected="' + (selected ? '1' : '0') + '"';
+      attrs['data-zd2-attend'] = attendRole;
+      attrs['data-zd2-event'] = evName;
+      attrs['data-zd2-color-on'] = colorOn;
+      attrs['data-zd2-color-off'] = colorOff;
+      attrs['data-zd2-selected'] = selected ? '1' : '0';
     }
-    return '<div' + attrs + ' style="' + styleStr(style) + '">' + escapeHtml(text) + '</div>';
+    view.attrs = attrs;
+    view.children = [text];
+    return ZeDocCore.toHtml(view);
   }
 
   // A gallery photo (repeat's listKey === 'gallery', see the 'repeat' case
@@ -288,39 +282,15 @@
   // hook for the lightbox script (render(), near the end of this file) to
   // pick up by event delegation - couple/quote/etc photos elsewhere don't.
   function imageNodeHtml(node, ctx) {
-    var src = resolveImageSrc(node, ctx);
-    if (!src) {
-      return '<div style="width:100%;height:100%;border-radius:' + px(node.radius) +
-        ';background:repeating-conic-gradient(#e9e9ee 0% 25%, #f7f7fa 0% 50%) 50% / 16px 16px;border:1px dashed #c9c9d0"></div>';
-    }
-    var isGalleryPhoto = ctx.repeatListKey === 'gallery';
-    var attrs = isGalleryPhoto ? ' data-zd-gallery-src="' + escapeHtml(src) + '"' : '';
-    var style = { width: '100%', height: '100%', objectFit: node.fit, borderRadius: px(node.radius), display: 'block' };
-    if (isGalleryPhoto) style.cursor = 'pointer';
-    return '<img src="' + escapeHtml(src) + '" alt="' + escapeHtml(node.alt) + '" draggable="false"' + attrs + ' style="' + styleStr(style) + '">';
+    return ZeDocCore.toHtml(ZeDocCore.imageView(node, ctx));
   }
 
   function shapeNodeHtml(node, ctx) {
-    var strokeOn = node.stroke.width > 0;
-    var border = strokeOn ? {
-      borderWidth: px(node.stroke.width),
-      borderStyle: node.stroke.style,
-      borderColor: resolveColor(node.stroke.color, ctx.theme)
-    } : {};
-    var base = Object.assign({ width: '100%', height: '100%', boxSizing: 'border-box' }, resolveFill(node.fill, ctx), border);
-
-    if (node.shape === 'ellipse') return '<div style="' + styleStr(Object.assign({}, base, { borderRadius: '50%' })) + '"></div>';
-    if (node.shape === 'triangle') return '<div style="' + styleStr(Object.assign({}, base, { clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' })) + '"></div>';
-    if (node.shape === 'line') {
-      var thickness = Math.max(node.stroke.width, 1);
-      return '<div style="width:100%;height:100%;display:flex;align-items:center">' +
-        '<div style="' + styleStr({ width: '100%', height: px(thickness), background: resolveColor(node.stroke.color, ctx.theme), borderRadius: px(thickness) }) + '"></div></div>';
-    }
-    return '<div style="' + styleStr(Object.assign({}, base, { borderRadius: px(node.radius) })) + '"></div>';
+    return ZeDocCore.toHtml(ZeDocCore.shapeView(node, ctx));
   }
 
   function svgNodeHtml(node) {
-    return '<div style="width:100%;height:100%">' + node.markup + '</div>';
+    return ZeDocCore.toHtml(ZeDocCore.svgView(node));
   }
 
   // --- block nodes (ze-designer's src/render/blocks/*.tsx port) ------------

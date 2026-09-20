@@ -387,12 +387,147 @@
     return {};
   }
 
+  // ---------------------------------------------------------------------
+  // Node views. Each returns a neutral tree - { tag, attrs?, style?, children?,
+  // html? } - that a host turns into its own output: toHtml() below for the
+  // guest page, a small createElement adapter in the designer canvas. The
+  // drawing rules therefore live here once. `attrs` keep insertion order (it
+  // is the serialised attribute order); `style` is CSS-in-JS with units.
+  // ---------------------------------------------------------------------
+
+  /**
+   * opts.autoHeight - leave the text box at its content height instead of
+   * filling the frame. The canvas measures that height (scrollHeight) to grow
+   * the frame; the guest page fills the frame and measures after resetting it.
+   */
+  function textView(node, ctx, opts) {
+    var effective = resolveTextStyle(node, ctx);
+    return {
+      tag: 'div',
+      style: {
+        fontFamily: resolveFont(node.style.font, ctx.theme),
+        fontSize: px(effective.size),
+        fontWeight: effective.weight,
+        lineHeight: node.style.lineHeight,
+        letterSpacing: px(node.style.letterSpacing),
+        textAlign: node.style.align,
+        color: resolveColor(node.style.color, ctx.theme),
+        fontStyle: effective.italic ? 'italic' : 'normal',
+        textDecoration: effective.underline ? 'underline' : 'none',
+        textTransform: node.style.transform === 'none' ? undefined : node.style.transform,
+        width: '100%',
+        height: opts && opts.autoHeight ? undefined : '100%',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word'
+      },
+      children: [resolveText(node, ctx)]
+    };
+  }
+
+  /**
+   * ctx.mapSrc rewrites the url (designer origin prefix); ctx.repeatListKey ===
+   * 'gallery' marks a gallery photo for the guest page's lightbox.
+   */
+  function imageView(node, ctx) {
+    var src = resolveImageSrc(node, ctx, ctx.mapSrc);
+    if (!src) {
+      return {
+        tag: 'div',
+        style: {
+          width: '100%',
+          height: '100%',
+          borderRadius: px(node.radius),
+          background: 'repeating-conic-gradient(#e9e9ee 0% 25%, #f7f7fa 0% 50%) 50% / 16px 16px',
+          border: '1px dashed #c9c9d0'
+        }
+      };
+    }
+    var isGalleryPhoto = ctx.repeatListKey === 'gallery';
+    var attrs = { src: src, alt: node.alt, draggable: 'false' };
+    if (isGalleryPhoto) attrs['data-zd-gallery-src'] = src;
+    return {
+      tag: 'img',
+      attrs: attrs,
+      style: {
+        width: '100%',
+        height: '100%',
+        objectFit: node.fit,
+        borderRadius: px(node.radius),
+        display: 'block',
+        cursor: isGalleryPhoto ? 'pointer' : undefined
+      }
+    };
+  }
+
+  function shapeView(node, ctx) {
+    var mapSrc = ctx.mapSrc;
+    var border = node.stroke.width > 0 ? {
+      borderWidth: px(node.stroke.width),
+      borderStyle: node.stroke.style,
+      borderColor: resolveColor(node.stroke.color, ctx.theme)
+    } : {};
+    var base = Object.assign({ width: '100%', height: '100%', boxSizing: 'border-box' }, resolveFill(node.fill, ctx, mapSrc), border);
+
+    if (node.shape === 'ellipse') return { tag: 'div', style: Object.assign({}, base, { borderRadius: '50%' }) };
+    // clipped, not drawn with the border trick, so the fill can be a gradient or an image
+    if (node.shape === 'triangle') return { tag: 'div', style: Object.assign({}, base, { clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)' }) };
+    if (node.shape === 'line') {
+      // a line ignores the frame's height and draws a rule down its middle
+      var thickness = Math.max(node.stroke.width, 1);
+      return {
+        tag: 'div',
+        style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center' },
+        children: [{
+          tag: 'div',
+          style: { width: '100%', height: px(thickness), background: resolveColor(node.stroke.color, ctx.theme), borderRadius: px(thickness) }
+        }]
+      };
+    }
+    return { tag: 'div', style: Object.assign({}, base, { borderRadius: px(node.radius) }) };
+  }
+
+  /** Literal imported SVG markup; colours are whatever the source baked in. */
+  function svgView(node) {
+    return { tag: 'div', style: { width: '100%', height: '100%' }, html: node.markup };
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function styleText(style) {
+    var out = '';
+    for (var key in style) {
+      if (!Object.prototype.hasOwnProperty.call(style, key)) continue;
+      var value = style[key];
+      if (value === undefined || value === null || value === '') continue;
+      out += key.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); }) + ':' + value + ';';
+    }
+    return out;
+  }
+
+  var VOID_TAGS = { img: 1, br: 1, input: 1 };
+
+  /** Serialises a view tree: attrs in insertion order, then style. */
+  function toHtml(view) {
+    if (typeof view === 'string') return escapeHtml(view);
+    var attrs = '';
+    for (var name in view.attrs) {
+      if (Object.prototype.hasOwnProperty.call(view.attrs, name)) attrs += ' ' + name + '="' + escapeHtml(view.attrs[name]) + '"';
+    }
+    var open = '<' + view.tag + attrs + ' style="' + styleText(view.style || {}) + '">';
+    if (VOID_TAGS[view.tag]) return open;
+    var inner = view.html != null ? view.html : (view.children || []).map(toHtml).join('');
+    return open + inner + '</' + view.tag + '>';
+  }
+
   return {
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,
     resolveColor: resolveColor, resolveFont: resolveFont, mergeTheme: mergeTheme,
     mergeFontStyleOverride: mergeFontStyleOverride, resolveTextStyle: resolveTextStyle,
     findAsset: findAsset, resolveFill: resolveFill, resolveText: resolveText, bucketFor: bucketFor,
-    resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor
+    resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor,
+    textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml
   };
 });
