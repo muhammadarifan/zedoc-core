@@ -231,6 +231,10 @@ declare const core: {
     count: number,
   ): GridLayout
   flowBoxes(boxes: FlowBox[]): { shift: number; bottom: number }
+  /** The wizard's section keys in canonical order ('opening-overlay', 'cover', ..., 'closing'). */
+  SECTIONS: readonly string[]
+  /** The section an artboard is (its `section` stamp, else its catalog id, else its catalog name), or null for a decorative/side/custom artboard. */
+  sectionOf(artboard: { id?: string; name?: string; role?: string; section?: string }): string | null
   /** CSS for a node's `animations` on a guest page, or null when it has none. `reveal` = some entry waits for the node to scroll into view. */
   motionStyle(node: { animations?: MotionAnimation[]; animationPlayMode?: 'parallel' | 'sequence' }): { style: Record<string, string>; presets: string[]; reveal: boolean } | null
   /** `@keyframes` text per preset, named `zd-motion-<preset>`. */

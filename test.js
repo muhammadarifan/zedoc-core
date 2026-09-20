@@ -271,4 +271,22 @@ assert.ok(html.includes('id="zd-music-btn"') && html.includes('.zd-ring') && htm
 assert.ok(html.includes('right:max(16px, calc(50% - 200px + 16px))')) // sits at the edge of the centred 400px column
 assert.ok(html.includes('document.addEventListener("click",first)')) // starts on the first click/tap
 
+// --- sections ------------------------------------------------------------------------
+assert.strictEqual(core.SECTIONS.length, 16)
+assert.strictEqual(core.SECTIONS[0], 'opening-overlay')
+assert.strictEqual(new Set(core.SECTIONS).size, core.SECTIONS.length)
+assert.strictEqual(core.sectionOf({ id: 'ab-invitation-rsvp', name: 'RSVP', role: 'invitation' }), 'rsvp') // catalog id
+assert.strictEqual(core.sectionOf({ id: 'ab-envelope', name: 'Envelope', role: 'envelope' }), 'opening-overlay')
+for (const id of ['amplop-digital', 'tanda-kasih', 'angpao-digital', 'share-love']) assert.strictEqual(core.sectionOf({ id: 'ab-invitation-' + id }), 'envelope') // four ids, one section
+assert.strictEqual(core.sectionOf({ id: 'k3Jx9', name: ' gallery ', role: 'invitation' }), 'gallery') // re-id'd by the designer: the catalog name still says which
+assert.strictEqual(core.sectionOf({ id: 'k3Jx9', name: 'Tanda Kasih' }), 'envelope')
+assert.strictEqual(core.sectionOf({ id: 'ab-invitation-gallery', name: 'Gallery', section: 'wishes' }), 'wishes') // the stamp wins
+assert.strictEqual(core.sectionOf({ id: 'ab-invitation-gallery', section: 'not-a-section' }), 'gallery') // an unknown stamp is ignored
+assert.strictEqual(core.sectionOf({ id: 'k3Jx9', name: 'Kanvas 1' }), null) // a canvas the couple made
+assert.strictEqual(core.sectionOf({ id: 'ab-invitation-footer', name: 'Footer' }), null) // decorative
+assert.strictEqual(core.sectionOf({ id: 'ab-invitation-border-strip', name: 'Border Strip' }), null)
+assert.strictEqual(core.sectionOf({ id: 'x', name: 'Gallery', role: 'side' }), null) // the backdrop is never a section
+assert.strictEqual(core.sectionOf({ id: 'toString', name: 'constructor' }), null) // never falls through to Object.prototype
+assert.strictEqual(core.sectionOf(null), null)
+
 console.log('zedoc-core: ok')

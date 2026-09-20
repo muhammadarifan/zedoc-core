@@ -966,7 +966,61 @@
     return { style: style, presets: presets, reveal: reveal };
   }
 
+  // ---------------------------------------------------------------------
+  // Sections. A catalog template is one artboard per section, and the wizard's
+  // on/off switches (`inv.sections`) are keyed by these names. A saved design
+  // loses the catalog's artboard ids (the designer re-ids them on import), so
+  // the section is stamped on the artboard as `section`; `sectionOf` reads that
+  // and falls back to the catalog id, then the catalog name, for artboards that
+  // never got the stamp (designs saved before it existed, the catalog files
+  // themselves). Decorative artboards (footer, border strip) have no section.
+  // Order = the wizard's canonical section order.
+  // ---------------------------------------------------------------------
+
+  // [section, catalog artboard ids, catalog artboard names]. The digital
+  // envelope is drawn under four ids/names across the catalog - a template has
+  // exactly one of them.
+  var SECTION_TABLE = [
+    ['opening-overlay', ['ab-envelope'], ['Envelope']],
+    ['cover', ['ab-invitation-cover'], ['Cover']],
+    ['quotes', ['ab-invitation-quotes'], ['Quotes']],
+    ['couple', ['ab-invitation-couple'], ['Couple']],
+    ['countdown', ['ab-invitation-countdown'], ['Countdown']],
+    ['events', ['ab-invitation-events'], ['Events']],
+    ['love-story', ['ab-invitation-love-story'], ['Love Story']],
+    ['gallery', ['ab-invitation-gallery'], ['Gallery']],
+    ['video', ['ab-invitation-video'], ['Video']],
+    ['live-streaming', ['ab-invitation-live-streaming'], ['Live Streaming']],
+    ['envelope', ['ab-invitation-amplop-digital', 'ab-invitation-tanda-kasih', 'ab-invitation-angpao-digital', 'ab-invitation-share-love'], ['Amplop Digital', 'Tanda Kasih', 'Angpao Digital', 'Share Love']],
+    ['send-gift', ['ab-invitation-send-gift'], ['Send Gift']],
+    ['health-protocol', ['ab-invitation-health-protocol'], ['Health Protocol']],
+    ['rsvp', ['ab-invitation-rsvp'], ['RSVP']],
+    ['wishes', ['ab-invitation-wishes'], ['Wishes']],
+    ['closing', ['ab-invitation-closing'], ['Closing']]
+  ];
+  var SECTIONS = SECTION_TABLE.map(function (row) { return row[0]; });
+  var SECTION_BY_ID = {};
+  var SECTION_BY_NAME = {};
+  SECTION_TABLE.forEach(function (row) {
+    row[1].forEach(function (id) { SECTION_BY_ID[id] = row[0]; });
+    row[2].forEach(function (name) { SECTION_BY_NAME[name.toLowerCase()] = row[0]; });
+  });
+  function lookup(table, key) { return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : null; }
+
+  /**
+   * The wizard section an artboard is, or null (decorative, the side backdrop,
+   * or an artboard the couple made themselves). The stamp wins, then the
+   * catalog id, then the catalog name - the name is the weakest signal: a
+   * couple who renamed the canvas loses it.
+   */
+  function sectionOf(artboard) {
+    if (!artboard || artboard.role === 'side') return null;
+    if (typeof artboard.section === 'string' && SECTIONS.indexOf(artboard.section) !== -1) return artboard.section;
+    return lookup(SECTION_BY_ID, artboard.id || '') || lookup(SECTION_BY_NAME, String(artboard.name || '').trim().toLowerCase());
+  }
+
   return {
+    SECTIONS: SECTIONS, sectionOf: sectionOf,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,
