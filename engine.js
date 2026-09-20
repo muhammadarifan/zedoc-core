@@ -1556,6 +1556,43 @@
     // second step a wrapped closing title grows visually into the message
     // below it while the message keeps its authored top coordinate.
     var textReflowScript = '(function(){' +
+      // flow() lays out one container's absolutely-positioned children top to
+      // bottom: a text node that needs more room than authored grows, and
+      // every later sibling shifts down by that overflow. A non-text child
+      // that holds text (a repeat item, a group) is flowed recursively and
+      // grows by whatever its own content overflowed, so a long quote or
+      // event name inside a repeat pushes its neighbours instead of
+      // overprinting them. Returns the container's total growth.
+      'function flow(container){' +
+      'var flowList=Array.prototype.slice.call(container.children).map(function(node,index){' +
+      'var baseTop=node.getAttribute("data-zd-flow-base-top");' +
+      'if(baseTop===null){baseTop=String(parseFloat(node.style.top)||0);node.setAttribute("data-zd-flow-base-top",baseTop);}' +
+      'return {node:node,index:index,top:parseFloat(baseTop)||0};' +
+      '}).sort(function(a,b){return a.top-b.top||a.index-b.index;});' +
+      'var shift=0,bottom=0;' +
+      'flowList.forEach(function(entry){' +
+      'var node=entry.node;' +
+      'node.style.top=(entry.top+shift)+"px";' +
+      'var grow=0;' +
+      'if(node.hasAttribute("data-zd-text-node")){' +
+      'var inner=node.firstElementChild;' +
+      'var base=parseFloat(node.getAttribute("data-zd-base-height"))||0;' +
+      'node.style.height=base+"px";' +
+      'var needed=Math.max(base,inner?inner.scrollHeight:base);' +
+      'if(needed>base)node.style.height=needed+"px";' +
+      'grow=Math.max(0,needed-base);' +
+      '}else if(node.querySelector("[data-zd-text-node]")){' +
+      'var baseH=node.getAttribute("data-zd-flow-base-h");' +
+      'if(baseH===null){baseH=String(parseFloat(node.style.height)||0);node.setAttribute("data-zd-flow-base-h",baseH);}' +
+      'grow=flow(node).shift;' +
+      // a clip wrapper is inset:0 (no authored height) - it has nothing to grow
+      'if(parseFloat(baseH)>0)node.style.height=(parseFloat(baseH)+grow)+"px";' +
+      '}' +
+      'shift+=grow;' +
+      'bottom=Math.max(bottom,entry.top+shift+node.offsetHeight);' +
+      '});' +
+      'return {shift:shift,bottom:bottom};' +
+      '}' +
       'function run(){' +
       'var sections=Array.prototype.slice.call(document.querySelectorAll("[data-zd-section-index]"));' +
       'if(!sections.length)return;' +
@@ -1563,25 +1600,7 @@
       'var cursor=0;' +
       'sections.forEach(function(section){' +
       'var height=parseFloat(section.getAttribute("data-zd-base-height"))||section.offsetHeight;' +
-      'var flow=Array.prototype.slice.call(section.children).map(function(node,index){' +
-      'var baseTop=node.getAttribute("data-zd-flow-base-top");' +
-      'if(baseTop===null){baseTop=String(parseFloat(node.style.top)||0);node.setAttribute("data-zd-flow-base-top",baseTop);}' +
-      'return {node:node,index:index,top:parseFloat(baseTop)||0};' +
-      '}).sort(function(a,b){return a.top-b.top||a.index-b.index;});' +
-      'var shift=0;' +
-      'flow.forEach(function(entry){' +
-      'var node=entry.node;' +
-      'node.style.top=(entry.top+shift)+"px";' +
-      'if(node.hasAttribute("data-zd-text-node")){' +
-      'var inner=node.firstElementChild;' +
-      'var base=parseFloat(node.getAttribute("data-zd-base-height"))||0;' +
-      'node.style.height=base+"px";' +
-      'var needed=Math.max(base,inner?inner.scrollHeight:base);' +
-      'if(needed>base)node.style.height=needed+"px";' +
-      'shift+=Math.max(0,needed-base);' +
-      '}' +
-      'height=Math.max(height,entry.top+shift+node.offsetHeight);' +
-      '});' +
+      'height=Math.max(height,flow(section).bottom);' +
       'section.style.height=height+"px";' +
       'section.style.top=cursor+"px";' +
       'cursor+=height;' +
