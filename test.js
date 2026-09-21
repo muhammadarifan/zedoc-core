@@ -476,4 +476,45 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(!engine.render(rsvpDoc, { events: [{ nama_acara: 'A<b>' }], guestId: 'g1', guestEventQuota: { 'A<b>': { mode: 'unlimited' } }, guestEventRsvp: { 'A<b>': { dewasa: 1, anak: 0 } } }).includes('A<b>'))
 }
 
+// --- RSVP follow-up: the organizer's questions, "RSVP Tercatat", a known guest's wish name -------
+{
+  const vm = require('node:vm')
+  const wishName = { id: 'wn', name: 'Wish name input', type: 'group', frame: frame(0, 0, 300, 44), opacity: 1, visible: true, locked: false, children: [T('ph', 'Nama Anda')] }
+  const wishDoc = docOf([wishName, T('other', 'Other')]) // a lone group at (0,0) would be unwrapped as a section block
+  const questions = [
+    { id: 'q1', label: 'Kursi roda?', type: 'yesno' }, { id: 'q2', label: 'Alergi </script><b>?', type: 'text' },
+    { id: 'q3', label: 'Ketiga', type: 'text' }, { id: 'q4', label: 'Keempat (di luar batas)', type: 'text' }, { label: 'tanpa id' },
+  ]
+  const page = engine.render(wishDoc, { events: [{ nama_acara: 'Akad', keterangan: 'Sabtu', venue: 'Aula' }], guestId: 'g1', guestName: 'Dimas "D"', guestEventQuota: {}, customRsvpQuestions: questions, guestRsvpAnswers: { q1: true } })
+  // the follow-up script is valid JS, gets the theme/questions/answers/events, and cannot be broken out of
+  const script = page.match(/<script>(\(function rsvpFollowUp[\s\S]*?\}\)\((\{"theme".*?\})\);)<\/script>/)
+  assert.ok(script, 'follow-up script is emitted')
+  new vm.Script(script[1]) // parses
+  const cfg = JSON.parse(script[2].replace(/\\u003c/g, '<'))
+  assert.deepStrictEqual(cfg.questions.map((q) => q.id), ['q1', 'q2', 'q3']) // at most 3, none without an id
+  assert.strictEqual(cfg.questions[1].label, 'Alergi </script><b>?')
+  assert.ok(!script[2].includes('</script>') && script[2].includes('\\u003c/script>'))
+  assert.deepStrictEqual(cfg.answers, { q1: true })
+  assert.deepStrictEqual(cfg.events, { Akad: { keterangan: 'Sabtu', venue: 'Aula' } })
+  assert.deepStrictEqual(Object.keys(cfg.theme), ['bg', 'ink', 'accent', 'accentInk', 'font'])
+  // it is only there for a guest who may RSVP, and the send goes through it
+  assert.ok(!engine.render(wishDoc, { guestId: 'g1' }).includes('function rsvpFollowUp'))
+  assert.ok(page.includes('window.zd2Questions(send)') && page.includes('body.rsvp_answers=answers') && page.includes('window.zd2Recorded(payload)'))
+  // running it with no questions defines the notice but not the modal
+  const win = {}
+  const stubEl = () => ({ style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {}, addEventListener() {}, setAttribute() {}, remove() {}, set className(v) {}, set textContent(v) {} })
+  const run = (c) => vm.runInNewContext('(' + engine.render.toString().length + ',0);' + script[1].replace(/\)\(\{"theme".*$/, ')(' + JSON.stringify(c) + ');'), { window: win, document: { createElement: stubEl, head: stubEl(), body: stubEl(), querySelector: () => null }, requestAnimationFrame: (f) => f(), setTimeout: () => 0, clearTimeout() {} })
+  run({ ...cfg, questions: [] })
+  assert.ok(typeof win.zd2Recorded === 'function' && win.zd2Questions === undefined)
+  run(cfg)
+  assert.strictEqual(typeof win.zd2Questions, 'function')
+  win.zd2Recorded({ Akad: { dewasa: 2, anak: 1 }, Resepsi: { dewasa: 0, anak: 0 } }) // draws without throwing
+  win.zd2Recorded({})
+
+  // a known guest signs the wish as themselves: filled in, read-only, escaped; an anonymous page is untouched
+  assert.ok(page.includes('value="Dimas &quot;D&quot;" readonly'))
+  const anon = engine.render(wishDoc, { guestId: 'g1', guestEventQuota: {} })
+  assert.ok(anon.includes('id="zd2-wish-name"') && !anon.includes(' readonly'))
+}
+
 console.log('zedoc-core: ok')

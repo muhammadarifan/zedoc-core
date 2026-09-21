@@ -437,12 +437,15 @@
           var placeholderNode = node.children.filter(function (c) { return c.type === 'text'; })[0];
           var placeholderText = placeholderNode ? resolveText(placeholderNode, ctx) : '';
           var inputTag = isTextarea ? 'textarea' : 'input';
+          // a guest opened by their own link signs the wish as themselves (the .dc.html form shows
+          // their name as fixed text): the name box is filled in and read-only
+          var lockedName = !isTextarea && ctx.data.guestName ? String(ctx.data.guestName) : '';
           // the input types in the placeholder text's own font/size, not the
           // browser default (a bare <input> would fall back to Times 16px)
           var inputType = placeholderNode ? {
             fontFamily: resolveFont(placeholderNode.style.font, ctx.theme),
             fontSize: px(resolveTextStyle(placeholderNode, ctx).size),
-            fontWeight: resolveTextStyle(placeholderNode, ctx).weight
+            fontWeight: lockedName ? 600 : resolveTextStyle(placeholderNode, ctx).weight
           } : { font: 'inherit' };
           // wrapStyle already provides position:absolute. It is also the
           // containing block for the transparent input overlay; overriding it
@@ -450,6 +453,7 @@
           // overlap the submit button below it.
           view.children = ZeDocCore.childViews(node.children.filter(function (c) { return c.type !== 'text'; }), gctx, o.path).concat([{
             raw: '<' + inputTag + (isTextarea ? '' : ' type="text"') + ' id="zd2-' + wishInputRole + '"' +
+              (lockedName ? ' value="' + escapeHtml(lockedName) + '" readonly' : '') +
               ' placeholder="' + escapeHtml(placeholderText) + '" style="' + styleStr(Object.assign({
                 position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', background: 'transparent',
                 outline: 'none', color: ctx.theme.palette.ink, padding: px(14), resize: 'none', boxSizing: 'border-box'
@@ -662,6 +666,169 @@
       return 'family=' + encodeURIComponent(family).replace(/%20/g, '+') + ':ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,700';
     });
     return '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?' + parts.join('&') + '&display=swap">';
+  }
+
+  // Escapes JSON so it can sit inside a <script> tag.
+  function jsonForScript(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c').replace(/[\u2028\u2029]/g, '');
+  }
+
+  // The two things that happen around sending an RSVP, drawn in the template's own colours
+  // (cfg.theme). Written as a real function and inlined into the page with toString(), like
+  // ZeDocCore.flowBoxes: it must not reach for anything outside itself.
+  //   window.zd2Questions(done)  the organizer's extra questions (up to 3) as a sheet, before the
+  //                              RSVP goes out; done(answers) then sends them with it. Only defined
+  //                              when there is at least one question.
+  //   window.zd2Recorded(sent)   the "RSVP Tercatat" notice after a send succeeded: which event and
+  //                              how many people (or a decline), for every send.
+  function rsvpFollowUp(cfg) {
+    var theme = cfg.theme;
+    var styleEl = document.createElement('style');
+    styleEl.textContent = [
+      '.zd2-sheet-back{position:fixed;inset:0;background:rgba(10,10,12,.55);display:flex;align-items:flex-end;justify-content:center;z-index:2147483000;opacity:0;transition:opacity .25s ease}',
+      '.zd2-sheet-back.zd2-open{opacity:1}',
+      '.zd2-sheet{width:100%;max-width:440px;background:var(--zd2-bg);color:var(--zd2-ink);font-family:var(--zd2-font);border-radius:20px 20px 0 0;padding:26px 22px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.28);transform:translateY(28px);transition:transform .32s cubic-bezier(.2,.8,.2,1);max-height:88vh;overflow-y:auto;box-sizing:border-box}',
+      '.zd2-sheet-back.zd2-open .zd2-sheet{transform:translateY(0)}',
+      '@media (min-width:640px){.zd2-sheet-back{align-items:center}.zd2-sheet{border-radius:20px}}',
+      '.zd2-eyebrow{margin:0 0 6px;font-size:11px;letter-spacing:2.5px;text-transform:uppercase;opacity:.6}',
+      '.zd2-sheet-title{margin:0 0 20px;font-size:18px;font-weight:600;line-height:1.4}',
+      '.zd2-field{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}',
+      '.zd2-label{font-size:13.5px;font-weight:500;line-height:1.5}',
+      '.zd2-choices{display:flex;gap:10px}',
+      '.zd2-choice{flex:1;padding:12px;border-radius:10px;border:1.5px solid var(--zd2-accent);background:transparent;color:inherit;font-size:14px;cursor:pointer;font-family:inherit}',
+      '.zd2-choice.zd2-active{background:var(--zd2-accent);color:var(--zd2-accent-ink)}',
+      '.zd2-text{padding:12px;border-radius:10px;border:1.5px solid rgba(128,128,128,.4);background:rgba(128,128,128,.06);color:inherit;font-size:16px;font-family:inherit;box-sizing:border-box;width:100%}',
+      '.zd2-text:focus{outline:none;border-color:var(--zd2-accent)}',
+      '.zd2-actions{display:flex;flex-direction:column;gap:10px;margin-top:4px}',
+      '.zd2-send{padding:14px;border:none;border-radius:10px;background:var(--zd2-accent);color:var(--zd2-accent-ink);font-size:15px;cursor:pointer;font-family:inherit}',
+      '.zd2-skip{padding:6px;border:none;background:transparent;color:inherit;opacity:.55;font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit}',
+      '.zd2-note-wrap{position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;padding:calc(14px + env(safe-area-inset-top)) 14px 0;z-index:2147483001;pointer-events:none}',
+      '.zd2-note{pointer-events:auto;width:100%;max-width:420px;background:var(--zd2-bg);color:var(--zd2-ink);font-family:var(--zd2-font);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.22);padding:16px 18px;box-sizing:border-box;opacity:0;transform:translateY(-16px);transition:opacity .3s ease,transform .3s ease}',
+      '.zd2-note.zd2-open{opacity:1;transform:translateY(0)}',
+      '.zd2-note-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}',
+      '.zd2-note-title{margin:0;font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}',
+      '.zd2-note-check{flex:none;width:20px;height:20px;border-radius:50%;background:var(--zd2-accent);color:var(--zd2-accent-ink);display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1}',
+      '.zd2-note-close{flex:none;border:none;background:transparent;color:inherit;opacity:.5;cursor:pointer;font-size:16px;line-height:1;padding:2px}',
+      '.zd2-note-event{margin:10px 0 0;font-size:13px;line-height:1.5}',
+      '.zd2-note-event+.zd2-note-event{margin-top:8px;padding-top:8px;border-top:1px solid rgba(128,128,128,.2)}',
+      '.zd2-note-name{font-weight:600}',
+      '.zd2-note-meta{opacity:.6;font-size:12px;margin-top:2px}'
+    ].join('\n');
+    document.head.appendChild(styleEl);
+
+    function paint(el) {
+      el.style.setProperty('--zd2-bg', theme.bg);
+      el.style.setProperty('--zd2-ink', theme.ink);
+      el.style.setProperty('--zd2-accent', theme.accent);
+      el.style.setProperty('--zd2-accent-ink', theme.accentInk);
+      el.style.setProperty('--zd2-font', theme.font);
+    }
+    function add(parent, tag, cls, text) {
+      var el = document.createElement(tag);
+      if (cls) el.className = cls;
+      if (text != null) el.textContent = text;
+      parent.appendChild(el);
+      return el;
+    }
+
+    if (cfg.questions.length) {
+      window.zd2Questions = function (done) {
+        var values = {};
+        cfg.questions.forEach(function (q) {
+          var prior = cfg.answers[q.id];
+          var has = prior !== undefined && prior !== null && prior !== '';
+          values[q.id] = has ? prior : (q.type === 'yesno' ? false : '');
+        });
+        var back = add(document.body, 'div', 'zd2-sheet-back');
+        var sheet = add(back, 'div', 'zd2-sheet');
+        paint(sheet);
+        add(sheet, 'p', 'zd2-eyebrow', 'Sebelum Melanjutkan');
+        add(sheet, 'p', 'zd2-sheet-title', 'Ada beberapa hal yang ingin kami ketahui');
+        cfg.questions.forEach(function (q) {
+          var field = add(sheet, 'div', 'zd2-field');
+          add(field, 'div', 'zd2-label', q.label);
+          if (q.type === 'yesno') {
+            var choices = add(field, 'div', 'zd2-choices');
+            var yes = add(choices, 'button', 'zd2-choice', 'Ya');
+            var no = add(choices, 'button', 'zd2-choice', 'Tidak');
+            yes.type = no.type = 'button';
+            var show = function () {
+              yes.classList.toggle('zd2-active', values[q.id] === true);
+              no.classList.toggle('zd2-active', values[q.id] !== true);
+            };
+            yes.addEventListener('click', function () { values[q.id] = true; show(); });
+            no.addEventListener('click', function () { values[q.id] = false; show(); });
+            show();
+          } else {
+            var input = add(field, 'input', 'zd2-text');
+            input.type = 'text';
+            input.maxLength = 300;
+            input.placeholder = q.placeholder || 'Opsional';
+            input.value = values[q.id] || '';
+            input.addEventListener('input', function () { values[q.id] = input.value; });
+          }
+        });
+        var actions = add(sheet, 'div', 'zd2-actions');
+        var send = add(actions, 'button', 'zd2-send', 'Kirim Jawaban');
+        var skip = add(actions, 'button', 'zd2-skip', 'Lewati');
+        send.type = skip.type = 'button';
+        var before = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        requestAnimationFrame(function () { back.classList.add('zd2-open'); });
+        var closed = false;
+        // "Lewati" still records what is set (a fast path, not a way to opt out of the answers)
+        function close() {
+          if (closed) return;
+          closed = true;
+          back.classList.remove('zd2-open');
+          document.body.style.overflow = before;
+          setTimeout(function () { back.remove(); }, 300);
+          // a same-visit "Ubah Jawaban" opens with what was just answered
+          Object.keys(values).forEach(function (id) { cfg.answers[id] = values[id]; });
+          done(Object.assign({}, values));
+        }
+        send.addEventListener('click', close);
+        skip.addEventListener('click', close);
+        back.addEventListener('click', function (e) { if (e.target === back) close(); });
+      };
+    }
+
+    window.zd2Recorded = function (sent) {
+      var names = Object.keys(sent || {});
+      if (!names.length) return;
+      var old = document.querySelector('.zd2-note-wrap');
+      if (old) old.remove();
+      var wrap = add(document.body, 'div', 'zd2-note-wrap');
+      var note = add(wrap, 'div', 'zd2-note');
+      paint(note);
+      var head = add(note, 'div', 'zd2-note-head');
+      var title = add(head, 'p', 'zd2-note-title');
+      add(title, 'span', 'zd2-note-check', '\u2713');
+      add(title, 'span', null, 'RSVP Tercatat');
+      var closeBtn = add(head, 'button', 'zd2-note-close', '\u00d7');
+      closeBtn.type = 'button';
+      closeBtn.setAttribute('aria-label', 'Tutup');
+      names.forEach(function (name) {
+        var counts = sent[name] || {};
+        var parts = [];
+        if (counts.dewasa) parts.push(counts.dewasa + ' Dewasa');
+        if (counts.anak) parts.push(counts.anak + ' Anak');
+        var line = add(note, 'div', 'zd2-note-event');
+        add(line, 'div', 'zd2-note-name', name + ' \u2014 ' + (parts.length ? parts.join(', ') + ' akan hadir' : 'Tidak dapat hadir'));
+        var info = cfg.events[name];
+        var meta = info ? [info.keterangan, info.venue].filter(Boolean).join(' \u00b7 ') : '';
+        if (meta) add(line, 'div', 'zd2-note-meta', meta);
+      });
+      requestAnimationFrame(function () { note.classList.add('zd2-open'); });
+      var timer;
+      function dismiss() {
+        clearTimeout(timer);
+        note.classList.remove('zd2-open');
+        setTimeout(function () { wrap.remove(); }, 300);
+      }
+      timer = setTimeout(dismiss, 7000);
+      closeBtn.addEventListener('click', dismiss);
+    };
   }
 
   /**
@@ -996,10 +1163,18 @@
       'if(counts&&counts.dewasa+counts.anak===0)noOne=true;' +
       'payload[ev]=attending?(counts||{dewasa:1,anak:0}):{dewasa:0,anak:0};});' +
       'if(noOne){zd2Toast("Isi jumlah tamu yang akan hadir.");return;}' +
-      'zd2Toast("Mengirim...");' +
-      'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_rsvp:payload})})' +
-      '.then(function(r){zd2Toast(r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.");if(r.ok&&window.zd2Lock)window.zd2Lock(payload);})' +
-      '.catch(function(){zd2Toast("Gagal mengirim konfirmasi, periksa koneksi Anda.");});' +
+      // the organizer's extra questions are asked first, only when someone is coming (window.zd2Questions)
+      'var attendingAny=Object.keys(payload).some(function(k){return payload[k].dewasa+payload[k].anak>0;});' +
+      'var send=function(answers){zd2Toast("Mengirim...");var body={event_rsvp:payload};if(answers)body.rsvp_answers=answers;' +
+      'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})' +
+      '.then(function(r){' +
+      'if(!r.ok){zd2Toast("Gagal mengirim konfirmasi, coba lagi.");return;}' +
+      'if(window.zd2Lock)window.zd2Lock(payload);' +
+      // "RSVP Tercatat" replaces the plain toast once the send actually succeeded
+      'if(window.zd2Recorded){var t=document.getElementById("zd2-toast");if(t)t.style.opacity="0";window.zd2Recorded(payload);}' +
+      'else zd2Toast("Terima kasih, konfirmasi Anda telah kami catat.");})' +
+      '.catch(function(){zd2Toast("Gagal mengirim konfirmasi, periksa koneksi Anda.");});};' +
+      'if(attendingAny&&window.zd2Questions)window.zd2Questions(send);else send(null);' +
       'return;}' +
       'if(e.target.closest&&e.target.closest("#zd2-wish-submit")){' +
       'var wslug=document.body.getAttribute("data-zd2-slug")||"";' +
@@ -1060,6 +1235,16 @@
         'document.addEventListener("click",first);document.addEventListener("touchend",first);' +
         '})();';
     }
+
+    // What rsvpFollowUp draws with: the template's own palette, the organizer's questions (up to 3,
+    // as the server also caps them), this guest's earlier answers, and each event's date/venue.
+    var followUpCfg = {
+      theme: { bg: doc.theme.palette.bg, ink: doc.theme.palette.ink, accent: doc.theme.palette.accent, accentInk: doc.theme.palette.accentInk, font: doc.theme.fonts.body },
+      questions: (Array.isArray(data.customRsvpQuestions) ? data.customRsvpQuestions : []).filter(function (q) { return q && q.id && q.label; }).slice(0, 3),
+      answers: Object.assign({}, data.guestRsvpAnswers),
+      events: {}
+    };
+    (guest.events || []).forEach(function (ev) { if (ev && ev.nama_acara) followUpCfg.events[ev.nama_acara] = { keterangan: ev.keterangan, venue: ev.venue }; });
 
     // The dewasa/anak counters of the RSVP cards (decorateNode's 'guest-count' role).
     // Same clamp rule as the .dc.html form: each field to its own cap, then the total
@@ -1171,6 +1356,7 @@
       (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
       (musicUrl ? '<script>' + musicScript + '</script>' : '') +
       (guest.canRsvp ? '<script>' + guestCountScript + '</script>' : '') +
+      (guest.canRsvp ? '<script>(' + rsvpFollowUp.toString() + ')(' + jsonForScript(followUpCfg) + ');</script>' : '') +
       '<script>' + rsvpLinkScript + '</script>' +
       '</body></html>';
   }
