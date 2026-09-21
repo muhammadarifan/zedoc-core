@@ -205,6 +205,11 @@
     return { dewasa: d, anak: a };
   }
 
+  // What a locked card says instead of the steppers (the .dc.html form's wording).
+  function guestSummaryText(dewasa, anak) {
+    return dewasa + anak > 0 ? 'Hadir · ' + dewasa + ' Dewasa · ' + anak + ' Anak' : 'Mohon maaf tidak dapat hadir.';
+  }
+
   function guestCountAttrs(ev) {
     var def = guestCountDefaults(ev);
     var attrs = { 'data-zd2-counts-event': ev.nama_acara || '', 'data-zd2-def-dewasa': String(def.dewasa), 'data-zd2-def-anak': String(def.anak) };
@@ -228,7 +233,7 @@
     var step = function (delta, sign, word) {
       return '<button type="button" data-zd2-step="' + delta + '" data-zd2-field="' + field + '" aria-label="' + word + ' ' + label.toLowerCase() + '" style="' + stepStyle + '">' + sign + '</button>';
     };
-    return '<div style="' + styleStr({ flex: 1, minWidth: 0, height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: px(4), padding: '0 8px', border: '1px solid ' + palette.line, borderRadius: radius, fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: palette.ink }) + '">' +
+    return '<div class="zd2-cnt" style="' + styleStr({ flex: 1, minWidth: 0, height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: px(4), padding: '0 8px', border: '1px solid ' + palette.line, borderRadius: radius, fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: palette.ink }) + '">' +
       '<span>' + label + '</span>' +
       '<span style="display:flex;align-items:center;gap:2px">' + step(-1, '&minus;', 'Kurangi') +
       '<input class="zd2-num" type="number" min="0" inputmode="numeric" data-zd2-field="' + field + '" value="' + (attending ? def[field] : 0) + '" aria-label="' + label + '" style="' + styleStr({ width: px(30), border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', color: palette.ink, fontFamily: 'inherit', fontSize: px(13), padding: 0 }) + '">' +
@@ -479,7 +484,13 @@
           var countAttending = attendingDefaultFor(ctx, ctx.repeatItem.nama_acara || '');
           view.attrs = guestCountAttrs(ctx.repeatItem);
           view.style = Object.assign({}, wrapStyle, { display: countAttending ? 'flex' : 'none', gap: px(10), alignItems: 'center' });
-          view.children = [{ raw: guestCountHtml('dewasa', 'Dewasa', ctx) }, { raw: guestCountHtml('anak', 'Anak', ctx) }];
+          var prevAnswer = ctx.data.guestEventRsvp && ctx.data.guestEventRsvp[ctx.repeatItem.nama_acara || ''];
+          var summary = guestSummaryText((prevAnswer && prevAnswer.dewasa) || 0, (prevAnswer && prevAnswer.anak) || 0);
+          view.children = [
+            { raw: guestCountHtml('dewasa', 'Dewasa', ctx) }, { raw: guestCountHtml('anak', 'Anak', ctx) },
+            // shown instead of the two boxes while the page is locked (body[data-zd2-locked])
+            { raw: '<div class="zd2-sum" style="' + styleStr({ display: 'none', flex: 1, alignItems: 'center', height: '100%', fontFamily: ctx.theme.fonts.body, fontSize: px(13), color: ctx.theme.palette.ink }) + '">' + escapeHtml(summary) + '</div>' }
+          ];
           return;
         }
 
@@ -722,7 +733,7 @@
     // a guest invited to fewer events gets a shorter events section. Same shallow
     // copy reasoning as the couple swap above.
     var guest = ZeDocCore.guestEvents(data);
-    data = Object.assign({}, data, { events: guest.events, canRsvp: guest.canRsvp });
+    data = Object.assign({}, data, { events: guest.events, canRsvp: guest.canRsvp, rsvpLocked: guest.responded });
 
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
@@ -970,6 +981,8 @@
       'else if(el.hasAttribute("data-zd2-color-on")){el.style.color=el.getAttribute(sel?"data-zd2-color-on":"data-zd2-color-off");}' +
       '});return;}' +
       'if(e.target.closest&&e.target.closest("#zd2-rsvp-submit")){' +
+      // locked (a repeat visit, or just sent): the button is "Ubah Jawaban" and only unlocks the form
+      'if(document.body.hasAttribute("data-zd2-locked")){if(window.zd2Unlock)window.zd2Unlock();return;}' +
       'var slug=document.body.getAttribute("data-zd2-slug")||"",guestId=document.body.getAttribute("data-zd2-guest-id")||"";' +
       'if(!slug||!guestId||document.body.getAttribute("data-zd2-can-rsvp")==="0"){zd2Toast("Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.");return;}' +
       'var payload={},seen={},noOne=false;' +
@@ -985,7 +998,7 @@
       'if(noOne){zd2Toast("Isi jumlah tamu yang akan hadir.");return;}' +
       'zd2Toast("Mengirim...");' +
       'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_rsvp:payload})})' +
-      '.then(function(r){zd2Toast(r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.");})' +
+      '.then(function(r){zd2Toast(r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.");if(r.ok&&window.zd2Lock)window.zd2Lock(payload);})' +
       '.catch(function(){zd2Toast("Gagal mengirim konfirmasi, periksa koneksi Anda.");});' +
       'return;}' +
       'if(e.target.closest&&e.target.closest("#zd2-wish-submit")){' +
@@ -1066,6 +1079,15 @@
       'if(md!==null)n.dewasa=Math.min(n.dewasa,md);if(ma!==null)n.anak=Math.min(n.anak,ma);' +
       'if(mt!==null&&n.dewasa+n.anak>mt)n[f]=Math.max(0,n[f]-(n.dewasa+n.anak-mt));' +
       'put(w,n.dewasa,n.anak);}' +
+      // the submit button reads "Ubah Jawaban" while locked; its own text is kept to put back
+      'function label(){var t=document.querySelector("#zd2-rsvp-submit [data-zd-text-node]");return t&&t.firstElementChild;}' +
+      'function relabel(locked){var l=label();if(!l)return;if(l.getAttribute("data-zd2-orig")===null)l.setAttribute("data-zd2-orig",l.textContent);' +
+      'l.textContent=locked?"Ubah Jawaban":l.getAttribute("data-zd2-orig");}' +
+      'window.zd2Lock=function(sent){all().forEach(function(w){var c=sent[w.getAttribute("data-zd2-counts-event")];if(!c)return;' +
+      'w.querySelector(".zd2-sum").textContent=c.dewasa+c.anak>0?"Hadir \u00b7 "+c.dewasa+" Dewasa \u00b7 "+c.anak+" Anak":"Mohon maaf tidak dapat hadir.";});' +
+      'document.body.setAttribute("data-zd2-locked","1");relabel(true);};' +
+      'window.zd2Unlock=function(){document.body.removeAttribute("data-zd2-locked");relabel(false);};' +
+      'if(document.body.hasAttribute("data-zd2-locked"))relabel(true);' +
       'window.zd2Counts=function(ev){var w=wrapFor(ev);return w?{dewasa:val(w,"dewasa"),anak:val(w,"anak")}:null;};' +
       'document.addEventListener("click",function(e){' +
       'var st=e.target.closest&&e.target.closest("[data-zd2-step]");' +
@@ -1122,8 +1144,12 @@
       '<link rel="preconnect" href="https://fonts.googleapis.com">' +
       '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       buildFontLinks(fontFamilies) +
-      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}.zd2-num{-moz-appearance:textfield}.zd2-num::-webkit-inner-spin-button,.zd2-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' + motionCss + musicCss + '</style>' +
-      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '"' + (data.canRsvp ? '' : ' data-zd2-can-rsvp="0"') + '>' +
+      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' +
+      // a repeat visit opens locked: the toggle only shows the earlier answer, the summary replaces the steppers
+      'body[data-zd2-locked] [data-zd2-attend]{pointer-events:none}body[data-zd2-locked] [data-zd2-counts-event]{display:flex!important}' +
+      'body[data-zd2-locked] .zd2-cnt{display:none!important}body[data-zd2-locked] .zd2-sum{display:flex!important}' +
+      '.zd2-num{-moz-appearance:textfield}.zd2-num::-webkit-inner-spin-button,.zd2-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' + motionCss + musicCss + '</style>' +
+      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '"' + (data.canRsvp ? '' : ' data-zd2-can-rsvp="0"') + (data.rsvpLocked ? ' data-zd2-locked="1"' : '') + '>' +
       '<div id="zd-wrap" style="position:relative;width:100%;overflow:hidden">' +
       '<div id="zd-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(stageWidth), height: px(totalHeight) }) + '">' +
       bodyHtml +

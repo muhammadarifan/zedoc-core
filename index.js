@@ -1038,45 +1038,47 @@
     }
     var demo = !data.guestId;
     var canRsvp = demo ? true : !!data.guestEventQuota;
-    if (!events || !canRsvp) return { events: events, canRsvp: canRsvp };
+    if (!events || !canRsvp) return { events: events, canRsvp: canRsvp, responded: false };
 
     var quotas = data.guestEventQuota || {};
     var answers = data.guestEventRsvp || {};
-    return {
-      canRsvp: canRsvp,
-      events: events.map(function (ev) {
-        var q = quotas[ev.nama_acara];
-        var prev = answers[ev.nama_acara];
-        var out = {
-          hasQuotaNote: false, quotaNote: '',
-          rsvpShowInputs: demo || !!q, rsvpMode: (q && q.mode) || 'category',
-          rsvpDewasaMax: null, rsvpAnakMax: null, rsvpTotalMax: null,
-          rsvpPrefillDewasa: (prev && prev.dewasa) || 0,
-          rsvpPrefillAnak: (prev && prev.anak) || 0,
-          // a stored 0/0 is a real "tidak hadir", so "has answered" is not "count > 0"
-          rsvpHasResponded: !!prev
-        };
-        var lead = 'Dengan tidak mengurangi rasa hormat, kami mengundang Anda untuk hadir bersama keluarga (jumlah undangan: ';
-        if (q && q.mode === 'total') {
-          if (q.enforce !== false) out.rsvpTotalMax = q.total || null;
-          if (q.total) { out.hasQuotaNote = true; out.quotaNote = lead + q.total + ' orang).'; }
-        } else if (q && q.mode !== 'unlimited') {
-          if (q.enforce !== false) {
-            out.rsvpDewasaMax = q.dewasa != null ? q.dewasa : null;
-            out.rsvpAnakMax = q.anak != null ? q.anak : null;
-          }
-          if (q.dewasa || q.anak) {
-            var parts = [];
-            if (q.dewasa) parts.push(q.dewasa + ' dewasa');
-            if (q.anak) parts.push(q.anak + ' anak');
-            out.hasQuotaNote = true;
-            out.quotaNote = lead + parts.join(' dan ') + ').';
-          }
+    var enriched = events.map(function (ev) {
+      var q = quotas[ev.nama_acara];
+      var prev = answers[ev.nama_acara];
+      var out = {
+        hasQuotaNote: false, quotaNote: '',
+        rsvpShowInputs: demo || !!q, rsvpMode: (q && q.mode) || 'category',
+        rsvpDewasaMax: null, rsvpAnakMax: null, rsvpTotalMax: null,
+        rsvpPrefillDewasa: (prev && prev.dewasa) || 0,
+        rsvpPrefillAnak: (prev && prev.anak) || 0,
+        // a stored 0/0 is a real "tidak hadir", so "has answered" is not "count > 0"
+        rsvpHasResponded: !!prev
+      };
+      var lead = 'Dengan tidak mengurangi rasa hormat, kami mengundang Anda untuk hadir bersama keluarga (jumlah undangan: ';
+      if (q && q.mode === 'total') {
+        if (q.enforce !== false) out.rsvpTotalMax = q.total || null;
+        if (q.total) { out.hasQuotaNote = true; out.quotaNote = lead + q.total + ' orang).'; }
+      } else if (q && q.mode !== 'unlimited') {
+        if (q.enforce !== false) {
+          out.rsvpDewasaMax = q.dewasa != null ? q.dewasa : null;
+          out.rsvpAnakMax = q.anak != null ? q.anak : null;
         }
-        out.rsvpUntracked = !out.rsvpShowInputs;
-        return Object.assign({}, ev, out);
-      })
-    };
+        if (q.dewasa || q.anak) {
+          var parts = [];
+          if (q.dewasa) parts.push(q.dewasa + ' dewasa');
+          if (q.anak) parts.push(q.anak + ' anak');
+          out.hasQuotaNote = true;
+          out.quotaNote = lead + parts.join(' dan ') + ').';
+        }
+      }
+      out.rsvpUntracked = !out.rsvpShowInputs;
+      return Object.assign({}, ev, out);
+    });
+    // a repeat visit: every event that asks for a headcount already has an answer, so the
+    // page opens on what they told us (locked, "Ubah" to edit) instead of a blank form.
+    // Only a real guest link counts - a preview has nobody who could have answered.
+    var responded = !demo && enriched.length > 0 && enriched.every(function (ev) { return ev.rsvpHasResponded || !ev.rsvpShowInputs; });
+    return { canRsvp: canRsvp, events: enriched, responded: responded };
   }
 
   // ---------------------------------------------------------------------

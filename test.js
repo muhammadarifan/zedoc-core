@@ -441,7 +441,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   const withCounts = engine.render(rsvpDoc, { events: evs2, guestId: 'g1', guestEventQuota: {} })
   const without = engine.render(rsvpDoc, { events: evs2, guestId: 'g1' }) // no quota data: canRsvp false
   assert.strictEqual(baseH(withCounts) - baseH(without), 64 + 64) // 2 cards, but only the baseline one is pre-grown: 64 + the 2nd card's pitch
-  assert.ok(!without.includes('data-zd2-counts-event'))
+  assert.ok(!without.includes('data-zd2-counts-event="'))
   const tracked = engine.render(rsvpDoc, { events: evs2, guestId: 'g1', guestEventQuota: { Akad: { mode: 'category', dewasa: 2, anak: 1 } }, guestEventRsvp: {} })
   assert.strictEqual([...tracked.matchAll(/data-zd2-counts-event="/g)].length, 1) // Resepsi: no quota, no counters
   assert.ok(tracked.includes('data-zd2-counts-event="Akad" data-zd2-def-dewasa="1" data-zd2-def-anak="0" data-zd2-max-dewasa="2" data-zd2-max-anak="1"'))
@@ -457,6 +457,23 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   // the client script and the submit that reads it ship with the page
   assert.ok(tracked.includes('window.zd2Counts=') && tracked.includes('window.zd2Counts(ev)') && tracked.includes('Isi jumlah tamu yang akan hadir'))
   assert.ok(!without.includes('window.zd2Counts='))
+
+  // a repeat visit opens locked: every event that asks for a headcount has an answer
+  const quotaBoth = { Akad: { mode: 'category', dewasa: 2, anak: 1 }, Resepsi: { mode: 'total', total: 4 } }
+  const ev2 = [{ nama_acara: 'Akad' }, { nama_acara: 'Resepsi' }]
+  assert.strictEqual(core.guestEvents({ events: ev2, guestId: 'g', guestEventQuota: quotaBoth, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 }, Resepsi: { dewasa: 0, anak: 0 } } }).responded, true) // a decline is an answer
+  assert.strictEqual(core.guestEvents({ events: ev2, guestId: 'g', guestEventQuota: quotaBoth, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 } } }).responded, false) // one still open
+  assert.strictEqual(core.guestEvents({ events: ev2, guestId: 'g', guestEventQuota: { Akad: quotaBoth.Akad }, guestEventRsvp: { Akad: { dewasa: 1, anak: 0 } } }).responded, true) // an event with no quota does not count
+  assert.strictEqual(core.guestEvents({ events: ev2, guestEventRsvp: { Akad: { dewasa: 1 }, Resepsi: { dewasa: 1 } } }).responded, false) // a preview never
+  assert.strictEqual(core.guestEvents({ events: [], guestId: 'g', guestEventQuota: {} }).responded, false)
+  const locked = engine.render(rsvpDoc, { events: ev2, guestId: 'g1', guestEventQuota: quotaBoth, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 }, Resepsi: { dewasa: 0, anak: 0 } } })
+  assert.ok(locked.includes(' data-zd2-locked="1"'))
+  assert.ok(locked.includes('>Hadir · 2 Dewasa · 1 Anak</div>') && locked.includes('>Mohon maaf tidak dapat hadir.</div>')) // each event's own summary
+  assert.ok(locked.includes('body[data-zd2-locked] .zd2-cnt{display:none!important}') && locked.includes('body[data-zd2-locked] [data-zd2-attend]{pointer-events:none}'))
+  assert.ok(!tracked.includes(' data-zd2-locked="1"')) // a first visit is an open form
+  assert.ok(locked.includes('window.zd2Unlock()') && locked.includes('window.zd2Lock(payload)') && locked.includes('Ubah Jawaban'))
+  // an answer the summary must not let inject markup
+  assert.ok(!engine.render(rsvpDoc, { events: [{ nama_acara: 'A<b>' }], guestId: 'g1', guestEventQuota: { 'A<b>': { mode: 'unlimited' } }, guestEventRsvp: { 'A<b>': { dewasa: 1, anak: 0 } } }).includes('A<b>'))
 }
 
 console.log('zedoc-core: ok')
