@@ -622,4 +622,51 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(/font-size:34px;[^"]*">Nama</.test(gatePage)) // and the size reaches the gate's text too
 }
 
+// --- a couple's Instagram/Facebook links -------------------------------------------------------
+{
+  const ring = { ...box('ring', { name: 'Social icon', stroke: { color: { kind: 'token', token: 'accent' }, width: 1, style: 'solid' } }), frame: frame(172, 360, 34, 34) }
+  const igText = T('ig', 'Profile social', { text: 'IG', frame: frame(160, 300, 60, 16) })
+  const coupleRepeat = (children) => ({ id: 'c', name: 'Couple', type: 'repeat', listKey: 'couple', visible: true, opacity: 1, frame: frame(0, 100, 400, 400), children })
+  const couple = [
+    { nama: 'Ada', ig: 'https://instagram.com/ada', fb: 'https://facebook.com/ada' },
+    { nama: 'Budi', ig: '', fb: 'javascript:alert(1)' },
+    { nama: 'Cici', ig: ' instagram.com/cici ', fb: '' },
+    { nama: 'Dodi', ig: '@dodi', fb: 'data:text/html,<b>x</b>' },
+    { nama: 'Eka', ig: '', fb: 'facebook.com/eka' },
+  ]
+  const socialDoc = (children) => docOf([coupleRepeat(children), T('h', 'Head')])
+  const page = engine.render(socialDoc([T('n', 'Nama', { binding: { key: 'nama' } }), ring]), { couple })
+  const links = [...page.matchAll(/<a [^>]*?href="([^"]+)"[^>]*?aria-label="(Instagram|Facebook)"/g)].map((m) => [m[2], m[1]])
+  assert.deepStrictEqual(links, [
+    ['Instagram', 'https://instagram.com/ada'], ['Facebook', 'https://facebook.com/ada'], // both: two icons
+    ['Instagram', 'https://instagram.com/cici'], // a bare domain gets https://, spaces trimmed
+    ['Facebook', 'https://facebook.com/eka'], // only Facebook: only that one
+  ])
+  assert.ok(!page.includes('javascript:') && !page.includes('data:text/html') && !page.includes('@dodi')) // other schemes / a bare handle: no link, never in the page
+  // Budi and Dodi have no usable link: their ring is hidden. Ada's two rings sit side by side around the slot's centre
+  assert.strictEqual([...page.slice(0, page.indexOf('id="zd-lightbox"')).matchAll(/display:none;/g)].length, 2)
+  const lefts = [...page.matchAll(/<a [^>]*?aria-label="[A-Za-z]+"[^>]*?style="[^"]*?left:([\d.-]+)px/g)].map((m) => +m[1])
+  assert.deepStrictEqual(lefts.slice(0, 2), [172 - 22, 172 + 22]) // 34 wide + a 10 gap, centred on the authored x
+  assert.strictEqual(lefts[2], 172) // one link: the authored spot
+  assert.ok(page.includes('<svg viewBox="0 0 24 24" width="16" height="16"') && page.includes('rx="5"') && page.includes('M13.5 21v-8')) // the network's glyph on a bare ring
+  // a document that draws its own "IG" text gets no glyph on top, and its label says FB for the Facebook copy
+  const labelled = engine.render(socialDoc([T('n', 'Nama', { binding: { key: 'nama' } }), ring, T('lb', 'Social icon label', { text: 'IG', frame: frame(172, 370, 34, 14) })]), { couple: [couple[0], couple[4]] })
+  assert.ok(!labelled.includes('<svg viewBox="0 0 24 24"'))
+  assert.deepStrictEqual([...labelled.matchAll(/aria-label="(Instagram|Facebook)"[^>]*><div [^>]*>(IG|FB)</g)].map((m) => [m[1], m[2]]), [['Instagram', 'IG'], ['Facebook', 'FB'], ['Facebook', 'FB']])
+  // the text form ("IG" on its own) links too, with the same rules; without a couple item (outside a repeat) nothing changes
+  const textOnly = engine.render(socialDoc([igText]), { couple: [couple[0]] })
+  assert.strictEqual([...textOnly.matchAll(/<a /g)].length, 2)
+  // a wide text is NOT split into frame-sized copies (they would land at the card's edges): one box, the words inline
+  assert.strictEqual([...textOnly.matchAll(/data-zd-text-node="ig"/g)].length, 1)
+  assert.ok(/<a [^>]*aria-label="Instagram"[^>]*>IG<\/a>\s{3}<a [^>]*aria-label="Facebook"[^>]*>FB<\/a>/.test(textOnly))
+  assert.ok(!/<a [^>]*style="[^"]*left:/.test(textOnly)) // no offset copy
+  // one link: the word alone is the link, and its box keeps the authored place
+  const oneLink = engine.render(socialDoc([igText]), { couple: [{ nama: 'X', ig: 'https://instagram.com/x' }] })
+  assert.strictEqual([...oneLink.matchAll(/<a /g)].length, 1)
+  assert.ok(oneLink.includes('left:160px'))
+  assert.ok(!engine.render(docOf([igText, T('h', 'Head')]), {}).includes('<a '))
+  // the names are roles the validator knows, none of them required
+  for (const name of ['Social icon', 'Social icon label', 'Profile social', 'Social link']) assert.ok(core.GUEST_ROLES.some((r) => r.name === name && r.role === 'social-link' && r.optional))
+}
+
 console.log('zedoc-core: ok')

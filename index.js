@@ -389,6 +389,12 @@
     // dewasa/anak counters inside an RSVP event card. Templates do not have to draw one:
     // withGuestCounts adds it under the Yes/No buttons when a card has none
     { name: 'Guest count', type: 'group', role: 'guest-count' },
+    // a couple card's Instagram/Facebook: the shape (a ring), or the small text ("IG") that stands in
+    // for it. The guest page makes it a link to the couple's ig/fb and hides it when they gave none.
+    { name: 'Social icon', type: 'shape', role: 'social-link', optional: true },
+    { name: 'Social icon label', type: 'text', role: 'social-link', optional: true },
+    { name: 'Profile social', type: 'text', role: 'social-link', optional: true },
+    { name: 'Social link', type: 'text', role: 'social-link', optional: true },
     { name: 'Event buttons', type: 'group', role: 'event-buttons' },
     { name: 'Map button', type: '*', role: 'map-button' },
     { name: 'Calendar button', type: '*', role: 'calendar-button' },

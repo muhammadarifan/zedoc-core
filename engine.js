@@ -308,6 +308,95 @@
       step(1, '+', ctx.ui.increase) + '</span></div>';
   }
 
+  // --- a couple's profile links --------------------------------------------------------------
+  // The couple card's Instagram/Facebook come from the couple item's own `ig` / `fb` (the wizard's
+  // "Instagram (URL)" / "Facebook (URL)"). They are typed by the couple and end up in a guest's browser,
+  // so only web links go out: an address with any other scheme (javascript:, data:...) is dropped, and a
+  // bare "instagram.com/bagas" gets https://. Anything else (a lone @handle) is no link.
+  function safeHref(url) {
+    var text = String(url == null ? '' : url).trim();
+    if (!text || /\s/.test(text)) return '';
+    if (/^https?:\/\//i.test(text)) return text;
+    if (/^[a-z][a-z0-9+.\-]*:/i.test(text)) return '';
+    return /^[\w\-]+(\.[\w\-]+)+(\/|$)/.test(text) ? 'https://' + text : '';
+  }
+
+  function socialLinks(item) {
+    var links = [];
+    var ig = safeHref(item.ig);
+    var fb = safeHref(item.fb);
+    if (ig) links.push({ kind: 'ig', href: ig });
+    if (fb) links.push({ kind: 'fb', href: fb });
+    return links;
+  }
+
+  var SOCIAL_GLYPH = {
+    ig: '<rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17.3" cy="6.7" r=".9" fill="currentColor"/>',
+    fb: '<path fill="currentColor" d="M13.5 21v-8h2.7l.4-3.1h-3.1V7.9c0-.9.25-1.5 1.55-1.5H17V3.5c-.3 0-1.2-.1-2.3-.1-2.3 0-3.9 1.4-3.9 4v2.5H8v3.1h2.8V21h2.7z"/>'
+  };
+
+  // Whether this document draws its own "IG" text on the ring; a bare ring gets the network's glyph instead.
+  var socialLabelled = false;
+
+  function hasNodeNamed(nodes, name) {
+    return nodes.some(function (node) { return node.name === name || (node.children ? hasNodeNamed(node.children, name) : false); });
+  }
+
+  /**
+   * A social node (ring, or "IG" text) of one couple card, as the couple's links: an <a> to their
+   * Instagram and one to their Facebook side by side where the template has room for a single one,
+   * only the ones they filled in, and nothing at all (the ring/label hidden) when they gave neither.
+   */
+  function socialViews(node, view, ctx) {
+    var links = socialLinks(ctx.repeatItem);
+    if (!links.length) {
+      view.style = Object.assign({}, view.style, { display: 'none' });
+      return view;
+    }
+    // A text as wide as the card ("IG" centred in a 388px box) has no icon-sized slot to split, so its
+    // links sit inline in the text - an anchor around each word, side by side - and only the words are
+    // clickable. The label drawn on a ring ("Social icon label") is as small as the ring and is
+    // split the same way the ring is, below.
+    if (node.type === 'text' && node.name !== 'Social icon label') {
+      var label = view.children[0];
+      var word = label.children[0];
+      var networkWord = /^\s*ig\s*$/i.test(word);
+      var inline = [];
+      links.forEach(function (link, i) {
+        if (i) inline.push('   ');
+        inline.push({
+          tag: 'a',
+          attrs: { href: link.href, target: '_blank', rel: 'noopener', 'aria-label': link.kind === 'ig' ? 'Instagram' : 'Facebook' },
+          style: { color: 'inherit', textDecoration: 'none', cursor: 'pointer' },
+          children: [networkWord ? (link.kind === 'ig' ? 'IG' : 'FB') : word]
+        });
+      });
+      view.children = [Object.assign({}, label, { children: inline })].concat(view.children.slice(1));
+      return view;
+    }
+    var left = parseFloat(view.style.left) || 0;
+    var step = node.frame.w + 10;
+    var copies = links.map(function (link, i) {
+      var children = view.children.slice();
+      if (node.type === 'text') {
+        // the text is the template's "IG"; the Facebook copy says FB
+        var label = children[0];
+        if (label && /^\s*ig\s*$/i.test(label.children[0])) children[0] = Object.assign({}, label, { children: [link.kind === 'ig' ? 'IG' : 'FB'] });
+      } else if (!socialLabelled) {
+        var color = node.stroke && node.stroke.width > 0 ? resolveColor(node.stroke.color, ctx.theme) : ctx.theme.palette.accent;
+        var size = Math.round(Math.min(node.frame.w, node.frame.h) * 0.47);
+        children.push({ raw: '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" aria-hidden="true" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;color:' + escapeHtml(color) + '">' + SOCIAL_GLYPH[link.kind] + '</svg>' });
+      }
+      return {
+        tag: 'a',
+        attrs: Object.assign({}, view.attrs, { href: link.href, target: '_blank', rel: 'noopener', 'aria-label': link.kind === 'ig' ? 'Instagram' : 'Facebook' }),
+        style: Object.assign({}, view.style, { left: px(left + (i - (links.length - 1) / 2) * step), display: 'block', textDecoration: 'none', cursor: 'pointer' }),
+        children: children
+      };
+    });
+    return copies.length === 1 ? copies[0] : { fragment: copies };
+  }
+
   // --- guest-only behaviour, layered on ZeDocCore's node views ---------------
   //
   // ZeDocCore.nodeView draws every node the same way the designer canvas does;
@@ -453,9 +542,12 @@
     var gctx = ZeDocCore.groupCtx(node, ctx);
 
     switch (node.type) {
-      case 'text':
+      case 'text': {
         decorateText(node, view, ctx);
+        var textSocial = ZeDocCore.guestRole(node);
+        if (textSocial && textSocial.role === 'social-link' && ctx.repeatItem) return socialViews(node, view, ctx);
         return;
+      }
       case 'shape': {
         // "Yes button"/"No button" (see ZeDocCore.GUEST_ROLES) pair
         // with their own text label siblings (decorateText's matching
@@ -464,6 +556,7 @@
         // attributes so handDrawnRsvpWishScript can swap the inner div's
         // style on click without knowing this theme.
         var shapeRole = ZeDocCore.guestRole(node);
+        if (shapeRole && shapeRole.role === 'social-link' && ctx.repeatItem) return socialViews(node, view, ctx);
         var attendShapeRole = shapeRole && shapeRole.role === 'attend-shape' ? shapeRole.arg : null;
         if (!attendShapeRole || !ctx.repeatItem) return;
         var attendEvent = ctx.repeatItem.nama_acara || '';
@@ -942,6 +1035,7 @@
   function render(doc, data, opts) {
     opts = opts || {};
     motionUsed = { any: false, reveal: false, presets: {} };
+    socialLabelled = doc.artboards.some(function (artboard) { return hasNodeNamed(artboard.nodes, 'Social icon label') || hasNodeNamed(artboard.nodes, 'Social link') || hasNodeNamed(artboard.nodes, 'Profile social'); });
     data = data || {};
     // The guest's language: the preset (fields, hardcoded-text replacements, script texts) merged in
     // before anything reads the data. opts.labels, else the page's own window.INVITATION_LABELS.
