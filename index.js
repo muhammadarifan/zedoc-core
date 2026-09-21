@@ -402,13 +402,24 @@
    * data instead, falling back to the literal text only when the data has
    * nothing for that key (a design never renders an empty box).
    */
+  // A literal (not data-driven) text in the guest's language: ctx.replacements maps the exact
+  // Indonesian text a template hardcodes ("Kepada Bapak/Ibu/Saudara/i") to its translation, the
+  // way the .dc.html engine rewrote its text nodes. The designer sets no ctx.replacements.
+  function literalText(text, ctx) {
+    var map = ctx.replacements;
+    if (!map || typeof text !== 'string') return text;
+    var trimmed = text.trim();
+    if (!trimmed || !Object.prototype.hasOwnProperty.call(map, trimmed)) return text;
+    return text.replace(trimmed, function () { return map[trimmed]; });
+  }
+
   function resolveText(node, ctx) {
     var fields = ctx.data.fields || {};
     var role = guestRole(node);
     if (!node.binding && role && role.role === 'couple-names') {
       return (fields.nama_panggilan_mempelai_1 || 'Bagas') + ' & ' + (fields.nama_panggilan_mempelai_2 || 'Larasati');
     }
-    if (!node.binding || ctx.preferLiteralText) return node.text;
+    if (!node.binding || ctx.preferLiteralText) return literalText(node.text, ctx);
 
     var key = node.binding.key;
     // Known top-level fields (a repeat's own static "Buka Peta" label) always
@@ -418,7 +429,7 @@
       var value = ctx.repeatItem[key];
       if (value) return String(value);
     }
-    return bucketFor(key, ctx.data)[key] || node.text;
+    return bucketFor(key, ctx.data)[key] || literalText(node.text, ctx);
   }
 
   // The vocabulary says which bucket a known key lives in; a key it does not
@@ -1030,6 +1041,30 @@
   // a soft quota still shows its "jumlah undangan" note but never clamps, here or
   // server-side. `unlimited` has no cap and no note, but still asks for the counts.
   // ---------------------------------------------------------------------
+  /**
+   * The guest's language preset (assets/labels.js: { fields, textReplacements, script }) merged into
+   * the data, same rules as the .dc.html engine: the couple's own fields win over the preset's,
+   * `textReplacements` rewrite hardcoded texts (see literalText), and `script` texts only fill keys
+   * the data does not already have. No preset (Indonesian, or an unknown language) = data as is.
+   */
+  function applyLanguage(data, preset) {
+    data = data || {};
+    if (!preset) return data;
+    var out = Object.assign({}, data, {
+      fields: Object.assign({}, preset.fields, data.fields),
+      textReplacements: Object.assign({}, preset.textReplacements, data.textReplacements)
+    });
+    Object.keys(preset.script || {}).forEach(function (key) { if (data[key] === undefined) out[key] = preset.script[key]; });
+    return out;
+  }
+
+  // The "jumlah undangan" note under a guest's RSVP card, in the page's language.
+  var QUOTA_NOTE = {
+    id: { lead: 'Dengan tidak mengurangi rasa hormat, kami mengundang Anda untuk hadir bersama keluarga (jumlah undangan: ', end: ').', total: '{n} orang', adult: '{n} dewasa', child: '{n} anak', and: ' dan ' },
+    en: { lead: 'With all due respect, we invite you to attend with your family (guests invited: ', end: ').', total: '{n} people', adult: '{n} adult(s)', child: '{n} child(ren)', and: ' and ' },
+    zh: { lead: '恭请您与家人一同出席（受邀人数：', end: '）。', total: '{n} 人', adult: '{n} 位成人', child: '{n} 位儿童', and: '，' }
+  };
+
   function guestEvents(data) {
     data = data || {};
     var events = Array.isArray(data.events) ? data.events : null;
@@ -1040,6 +1075,7 @@
     var canRsvp = demo ? true : !!data.guestEventQuota;
     if (!events || !canRsvp) return { events: events, canRsvp: canRsvp, responded: false };
 
+    var note = QUOTA_NOTE[data.language] || QUOTA_NOTE.id;
     var quotas = data.guestEventQuota || {};
     var answers = data.guestEventRsvp || {};
     var enriched = events.map(function (ev) {
@@ -1054,10 +1090,9 @@
         // a stored 0/0 is a real "tidak hadir", so "has answered" is not "count > 0"
         rsvpHasResponded: !!prev
       };
-      var lead = 'Dengan tidak mengurangi rasa hormat, kami mengundang Anda untuk hadir bersama keluarga (jumlah undangan: ';
       if (q && q.mode === 'total') {
         if (q.enforce !== false) out.rsvpTotalMax = q.total || null;
-        if (q.total) { out.hasQuotaNote = true; out.quotaNote = lead + q.total + ' orang).'; }
+        if (q.total) { out.hasQuotaNote = true; out.quotaNote = note.lead + note.total.replace('{n}', q.total) + note.end; }
       } else if (q && q.mode !== 'unlimited') {
         if (q.enforce !== false) {
           out.rsvpDewasaMax = q.dewasa != null ? q.dewasa : null;
@@ -1065,10 +1100,10 @@
         }
         if (q.dewasa || q.anak) {
           var parts = [];
-          if (q.dewasa) parts.push(q.dewasa + ' dewasa');
-          if (q.anak) parts.push(q.anak + ' anak');
+          if (q.dewasa) parts.push(note.adult.replace('{n}', q.dewasa));
+          if (q.anak) parts.push(note.child.replace('{n}', q.anak));
           out.hasQuotaNote = true;
-          out.quotaNote = lead + parts.join(' dan ') + ').';
+          out.quotaNote = note.lead + parts.join(note.and) + note.end;
         }
       }
       out.rsvpUntracked = !out.rsvpShowInputs;
@@ -1151,7 +1186,7 @@
   }
 
   return {
-    SECTIONS: SECTIONS, sectionOf: sectionOf, guestEvents: guestEvents, withGuestCounts: withGuestCounts,
+    SECTIONS: SECTIONS, sectionOf: sectionOf, guestEvents: guestEvents, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,

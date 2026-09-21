@@ -487,7 +487,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   ]
   const page = engine.render(wishDoc, { events: [{ nama_acara: 'Akad', keterangan: 'Sabtu', venue: 'Aula' }], guestId: 'g1', guestName: 'Dimas "D"', guestEventQuota: {}, customRsvpQuestions: questions, guestRsvpAnswers: { q1: true } })
   // the follow-up script is valid JS, gets the theme/questions/answers/events, and cannot be broken out of
-  const script = page.match(/<script>(\(function rsvpFollowUp[\s\S]*?\}\)\((\{"theme".*?\})\);)<\/script>/)
+  const script = page.match(/<script>(\(function rsvpFollowUp[\s\S]*?\}\)\((\{"t".*?\})\);)<\/script>/)
   assert.ok(script, 'follow-up script is emitted')
   new vm.Script(script[1]) // parses
   const cfg = JSON.parse(script[2].replace(/\\u003c/g, '<'))
@@ -503,7 +503,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   // running it with no questions defines the notice but not the modal
   const win = {}
   const stubEl = () => ({ style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {}, addEventListener() {}, setAttribute() {}, remove() {}, set className(v) {}, set textContent(v) {} })
-  const run = (c) => vm.runInNewContext('(' + engine.render.toString().length + ',0);' + script[1].replace(/\)\(\{"theme".*$/, ')(' + JSON.stringify(c) + ');'), { window: win, document: { createElement: stubEl, head: stubEl(), body: stubEl(), querySelector: () => null }, requestAnimationFrame: (f) => f(), setTimeout: () => 0, clearTimeout() {} })
+  const run = (c) => vm.runInNewContext('(' + engine.render.toString().length + ',0);' + script[1].replace(/\)\(\{"t".*$/, ')(' + JSON.stringify(c) + ');'), { window: win, document: { createElement: stubEl, head: stubEl(), body: stubEl(), querySelector: () => null }, requestAnimationFrame: (f) => f(), setTimeout: () => 0, clearTimeout() {} })
   run({ ...cfg, questions: [] })
   assert.ok(typeof win.zd2Recorded === 'function' && win.zd2Questions === undefined)
   run(cfg)
@@ -515,6 +515,74 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(page.includes('value="Dimas &quot;D&quot;" readonly'))
   const anon = engine.render(wishDoc, { guestId: 'g1', guestEventQuota: {} })
   assert.ok(anon.includes('id="zd2-wish-name"') && !anon.includes(' readonly'))
+}
+
+// --- language presets ------------------------------------------------------------------------------
+{
+  const labels = {
+    en: {
+      fields: { teks_tombol_konfirmasi: 'Send Confirmation', judul_acara: 'The Wedding Of' },
+      textReplacements: { 'Kepada Bapak/Ibu/Saudara/i': 'Dear', 'Nama Anda': 'Your Name' },
+      script: { textGuestFallback: 'Guest', textWishLimitReached: 'Max 3 wishes.', textNoGiftMessage: 'Your presence is the gift.' },
+    },
+    zh: { fields: {}, textReplacements: {}, script: {} },
+  }
+  // merging: the couple's own fields win, preset scripts only fill what is missing, the input is not mutated
+  const src = { language: 'en', fields: { judul_acara: 'Our Day' }, textGuestFallback: 'Tamu' }
+  const merged = core.applyLanguage(src, labels.en)
+  assert.deepStrictEqual(merged.fields, { teks_tombol_konfirmasi: 'Send Confirmation', judul_acara: 'Our Day' })
+  assert.strictEqual(merged.textGuestFallback, 'Tamu')
+  assert.strictEqual(merged.textWishLimitReached, 'Max 3 wishes.')
+  assert.deepStrictEqual(src.fields, { judul_acara: 'Our Day' })
+  assert.strictEqual(core.applyLanguage(src, undefined), src) // no preset: data as is
+
+  // hardcoded texts are replaced by exact (trimmed) match, only when the page gives replacements
+  const lit = (text, extra) => core.resolveText(textNode({ text }), ctx({ replacements: { 'Kepada Bapak/Ibu/Saudara/i': 'Dear' }, ...extra }))
+  assert.strictEqual(lit('Kepada Bapak/Ibu/Saudara/i'), 'Dear')
+  assert.strictEqual(lit('  Kepada Bapak/Ibu/Saudara/i\n'), '  Dear\n') // its own whitespace stays
+  assert.strictEqual(lit('Kepada Bapak/Ibu'), 'Kepada Bapak/Ibu') // not a substring match
+  assert.strictEqual(core.resolveText(textNode({ text: 'Kepada Bapak/Ibu/Saudara/i' }), ctx()), 'Kepada Bapak/Ibu/Saudara/i') // the designer: untouched
+  assert.strictEqual(lit('x', { replacements: { x: '$& $1' } }), '$& $1') // the replacement is literal
+  assert.strictEqual(lit('Constructor', { replacements: {} }), 'Constructor')
+
+  // the quota note in the page's language (Indonesian is what the tests above pin)
+  const ev = [{ nama_acara: 'A' }]
+  const note = (language, quota) => core.guestEvents({ language, events: ev, guestId: 'g', guestEventQuota: { A: quota } }).events[0].quotaNote
+  assert.strictEqual(note('en', { mode: 'category', dewasa: 2, anak: 1 }), 'With all due respect, we invite you to attend with your family (guests invited: 2 adult(s) and 1 child(ren)).')
+  assert.strictEqual(note('en', { mode: 'total', total: 4 }), 'With all due respect, we invite you to attend with your family (guests invited: 4 people).')
+  assert.strictEqual(note('zh', { mode: 'category', dewasa: 2, anak: 1 }), '恭请您与家人一同出席（受邀人数：2 位成人，1 位儿童）。')
+  assert.ok(note('fr', { mode: 'total', total: 4 }).endsWith('(jumlah undangan: 4 orang).')) // an unknown language reads as Indonesian
+
+  // the guest page: preset fields + replacements drawn, the engine's own words follow the language
+  const doc = docOf([
+    T('a', 'a', { binding: { key: 'teks_tombol_konfirmasi' }, text: 'Kirim Konfirmasi' }),
+    T('b', 'b', { text: 'Kepada Bapak/Ibu/Saudara/i' }),
+    T('c', 'c', { binding: { key: 'judul_acara' }, text: 'Kami Menikah' }),
+  ])
+  const enPage = engine.render(doc, { language: 'en', fields: { judul_acara: 'Our Day' } }, { labels })
+  assert.ok(enPage.includes('>Send Confirmation</div>') && enPage.includes('>Dear</div>') && enPage.includes('>Our Day</div>'))
+  assert.ok(!enPage.includes('Kirim Konfirmasi') && !enPage.includes('Kepada Bapak'))
+  assert.ok(enPage.includes('window.zd2T={') && enPage.includes('"sending":"Sending..."') && enPage.includes('"wishLimit":"Max 3 wishes."') && enPage.includes('"guestFallback":"Guest"'))
+  const zhPage = engine.render(doc, { language: 'zh' }, { labels })
+  assert.ok(zhPage.includes('"sending":"发送中…"') && zhPage.includes('>Kirim Konfirmasi</div>')) // zh preset has no field for it: the couple's default text stays
+  const idPage = engine.render(doc, { language: 'id' }, { labels })
+  assert.ok(idPage.includes('"sending":"Mengirim..."') && idPage.includes('>Kepada Bapak/Ibu/Saudara/i</div>'))
+  assert.ok(!engine.render(doc, { language: 'fr' }, { labels }).includes('Dear')) // no preset for it
+  // no labels at all (a host that does not load them): Indonesian, nothing thrown
+  assert.ok(engine.render(doc, { language: 'en' }).includes('"sending":"Sending..."')) // the engine's own words still follow data.language
+
+  // counters and summary speak the language too (a card as the catalog draws it: latar, nama, tombol Ya/Tidak)
+  const cardShape = (id, name, x, y, w, h) => ({ ...box(id, { name }), frame: { x, y, w, h, rotate: 0, flipX: false, flipY: false } })
+  const attendGroup = { id: 'ab', name: 'Attendance buttons', type: 'group', frame: frame(16, 98, 334, 34), opacity: 1, visible: true, locked: false, children: [cardShape('y', 'Yes button', 0, 0, 163, 34), cardShape('n', 'No button', 171, 0, 163, 34)] }
+  const rsvpDoc = docOf([{ id: 'r', name: 'RSVP event cards', type: 'repeat', listKey: 'events', visible: true, opacity: 1, frame: frame(32, 106, 366, 158), children: [cardShape('bg', 'RSVP card bg', 0, 0, 366, 148), attendGroup] }, T('h', 'Head')])
+  const rsvpEn = engine.render(rsvpDoc, { language: 'en', events: [{ nama_acara: 'Akad', tanggal: '2027-06-12', jam: '08:00' }], guestId: 'g1', guestEventQuota: { Akad: { mode: 'category', dewasa: 2, anak: 1 } }, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 } } }, { labels })
+  assert.ok(rsvpEn.includes('<span>Adults</span>') && rsvpEn.includes('<span>Children</span>') && rsvpEn.includes('aria-label="Decrease adults"'))
+  assert.ok(rsvpEn.includes('>Attending · 2 adult(s) · 1 child(ren)</div>'))
+  assert.ok(rsvpEn.includes('guests invited: 2 adult(s) and 1 child(ren)')) // the quota note, drawn by the card's note text
+  // a no-gift message can come from the preset's script texts, after the couple's own field
+  const gift = (data) => engine.render((() => { const d = docOf([]); d.artboards = [part('send-gift', 300)]; return d })(), data, { labels })
+  assert.ok(gift({ language: 'en', sections: { 'send-gift': false, envelope: false } }).includes('Your presence is the gift.'))
+  assert.ok(gift({ language: 'en', sections: { 'send-gift': false, envelope: false }, fields: { teks_pesan_tanpa_kado: 'Just pray' } }).includes('Just pray'))
 }
 
 console.log('zedoc-core: ok')

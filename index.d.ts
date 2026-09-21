@@ -89,6 +89,8 @@ export interface ResolveContext {
   assets: { id: string; src: string }[]
   repeatItem?: Record<string, unknown> | null
   preferLiteralText?: boolean
+  /** Guest page: exact hardcoded text -> its translation (the language preset's `textReplacements`). The designer sets none. */
+  replacements?: Record<string, string>
   /** Rewrites an asset/image url on its way out (the designer prefixes its origin). */
   mapSrc?: (src: string) => string
   /** 'gallery' marks a photo for the guest page's lightbox. */
@@ -254,6 +256,12 @@ declare const core: {
    * Returns copies plus how much taller the section got at its baseline item count; nodes come back
    * unchanged (extra 0) when there is no such card or it already has a 'Guest count' group.
    */
+  /**
+   * The guest's language preset merged into the data (the couple's own `fields` win; `textReplacements`
+   * rewrite hardcoded texts; `script` texts only fill keys the data lacks). Returns `data` itself when
+   * there is no preset. Does not mutate its input.
+   */
+  applyLanguage<D extends Record<string, unknown>>(data: D, preset?: { fields?: Record<string, string>; textReplacements?: Record<string, string>; script?: Record<string, string> } | null): D
   withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }

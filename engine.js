@@ -46,6 +46,74 @@
 
   function px(n) { return n + 'px'; }
 
+  // The guest page's own words (toasts, counters, the questions sheet...), by page language. The
+  // couple's texts come from the data + language preset (ZeDocCore.applyLanguage); these are what
+  // the engine itself says. Indonesian is the base: another language only overrides what it
+  // translates, and a language with no entry here reads as Indonesian.
+  var UI_TEXT = {
+    id: {
+      adult: 'Dewasa', child: 'Anak', decrease: 'Kurangi', increase: 'Tambah',
+      summaryYes: 'Hadir · {d} Dewasa · {a} Anak', summaryNo: 'Mohon maaf tidak dapat hadir.', changeAnswer: 'Ubah Jawaban',
+      copied: 'Nomor rekening disalin!', needPersonalLink: 'Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.',
+      sending: 'Mengirim...', rsvpThanks: 'Terima kasih, konfirmasi Anda telah kami catat.',
+      rsvpFailed: 'Gagal mengirim konfirmasi, coba lagi.', rsvpOffline: 'Gagal mengirim konfirmasi, periksa koneksi Anda.',
+      needGuests: 'Isi jumlah tamu yang akan hadir.',
+      wishEmpty: 'Tuliskan ucapan Anda terlebih dahulu.', wishPreview: 'Ucapan tidak dapat dikirim dari pratinjau ini.',
+      wishLimit: 'Anda sudah mencapai batas 3 ucapan & doa.', wishFailed: 'Gagal mengirim ucapan, coba lagi.',
+      wishThanks: 'Terima kasih atas doa dan ucapannya!', wishOffline: 'Gagal mengirim ucapan, periksa koneksi Anda.',
+      guestFallback: 'Tamu Undangan', downloadIcs: 'Download .ics', addGoogle: 'Tambah ke Google Calendar', musicLabel: 'Musik latar',
+      sheetEyebrow: 'Sebelum Melanjutkan', sheetTitle: 'Ada beberapa hal yang ingin kami ketahui', yes: 'Ya', no: 'Tidak',
+      sheetSend: 'Kirim Jawaban', sheetSkip: 'Lewati', optional: 'Opsional',
+      noteTitle: 'RSVP Tercatat', close: 'Tutup', noteAdult: '{n} Dewasa', noteChild: '{n} Anak',
+      noteYes: '{parts} akan hadir', noteNo: 'Tidak dapat hadir'
+    },
+    en: {
+      adult: 'Adults', child: 'Children', decrease: 'Decrease', increase: 'Increase',
+      summaryYes: 'Attending · {d} adult(s) · {a} child(ren)', summaryNo: 'Sorry, we are unable to attend.', changeAnswer: 'Change Response',
+      copied: 'Account number copied!', needPersonalLink: 'Open the invitation through your personal link to confirm your attendance.',
+      sending: 'Sending...', rsvpThanks: 'Thank you, your response has been recorded.',
+      rsvpFailed: 'Could not send your response, please try again.', rsvpOffline: 'Could not send your response, check your connection.',
+      needGuests: 'Enter how many guests will attend.',
+      wishEmpty: 'Please write your wishes first.', wishPreview: 'Wishes cannot be sent from this preview.',
+      wishLimit: 'You have already sent the maximum of 3 wishes & prayers.', wishFailed: 'Could not send your wishes, please try again.',
+      wishThanks: 'Thank you for your prayers and wishes!', wishOffline: 'Could not send your wishes, check your connection.',
+      guestFallback: 'Guest', downloadIcs: 'Download .ics', addGoogle: 'Add to Google Calendar', musicLabel: 'Background music',
+      sheetEyebrow: 'Before You Continue', sheetTitle: 'A few things we would like to know', yes: 'Yes', no: 'No',
+      sheetSend: 'Send Answers', sheetSkip: 'Skip', optional: 'Optional',
+      noteTitle: 'RSVP Recorded', close: 'Close', noteAdult: '{n} adult(s)', noteChild: '{n} child(ren)',
+      noteYes: 'Attending: {parts}', noteNo: 'Unable to attend'
+    },
+    zh: {
+      adult: '成人', child: '儿童', decrease: '减少', increase: '增加',
+      summaryYes: '出席 · {d} 位成人 · {a} 位儿童', summaryNo: '很抱歉，无法出席。', changeAnswer: '修改回复',
+      copied: '账号已复制！', needPersonalLink: '请通过您的专属链接打开邀请函以确认出席。',
+      sending: '发送中…', rsvpThanks: '谢谢，您的回复已记录。',
+      rsvpFailed: '发送失败，请重试。', rsvpOffline: '发送失败，请检查网络连接。',
+      needGuests: '请填写出席人数。',
+      wishEmpty: '请先写下您的祝福。', wishPreview: '预览模式下无法发送祝福。',
+      wishLimit: '您已发送最多 3 条祝福与祈祷。', wishFailed: '祝福发送失败，请重试。',
+      wishThanks: '感谢您的祝福！', wishOffline: '祝福发送失败，请检查网络连接。',
+      guestFallback: '宾客', downloadIcs: '下载 .ics', addGoogle: '添加到 Google 日历', musicLabel: '背景音乐',
+      sheetEyebrow: '继续之前', sheetTitle: '我们想了解几件事', yes: '是', no: '否',
+      sheetSend: '提交回答', sheetSkip: '跳过', optional: '选填',
+      noteTitle: '回复已记录', close: '关闭', noteAdult: '{n} 位成人', noteChild: '{n} 位儿童',
+      noteYes: '出席：{parts}', noteNo: '无法出席'
+    }
+  };
+
+  // The page's texts for one render. The language preset's own script texts (assets/labels.js, already
+  // translated there) win for the few that both have: the wish limit and the anonymous guest's name.
+  function uiText(data) {
+    var text = Object.assign({}, UI_TEXT.id, UI_TEXT[data.language]);
+    if (data.textWishLimitReached) text.wishLimit = data.textWishLimitReached;
+    if (data.textGuestFallback) text.guestFallback = data.textGuestFallback;
+    return text;
+  }
+
+  function fmt(template, vars) {
+    return template.replace(/\{(\w+)\}/g, function (match, key) { return vars[key] != null ? vars[key] : match; });
+  }
+
   function styleStr(obj) {
     var out = '';
     for (var key in obj) {
@@ -206,8 +274,8 @@
   }
 
   // What a locked card says instead of the steppers (the .dc.html form's wording).
-  function guestSummaryText(dewasa, anak) {
-    return dewasa + anak > 0 ? 'Hadir · ' + dewasa + ' Dewasa · ' + anak + ' Anak' : 'Mohon maaf tidak dapat hadir.';
+  function guestSummaryText(dewasa, anak, ui) {
+    return dewasa + anak > 0 ? fmt(ui.summaryYes, { d: dewasa, a: anak }) : ui.summaryNo;
   }
 
   function guestCountAttrs(ev) {
@@ -231,13 +299,13 @@
     var radius = px(Math.min(ctx.theme.radius || 0, 12));
     var stepStyle = styleStr({ width: px(24), height: px(24), padding: 0, flex: 'none', border: '1px solid ' + palette.accent, borderRadius: radius, background: 'transparent', color: palette.accent, fontFamily: 'inherit', fontSize: px(15), lineHeight: 1, cursor: 'pointer' });
     var step = function (delta, sign, word) {
-      return '<button type="button" data-zd2-step="' + delta + '" data-zd2-field="' + field + '" aria-label="' + word + ' ' + label.toLowerCase() + '" style="' + stepStyle + '">' + sign + '</button>';
+      return '<button type="button" data-zd2-step="' + delta + '" data-zd2-field="' + field + '" aria-label="' + escapeHtml(word + ' ' + label.toLowerCase()) + '" style="' + stepStyle + '">' + sign + '</button>';
     };
     return '<div class="zd2-cnt" style="' + styleStr({ flex: 1, minWidth: 0, height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: px(4), padding: '0 8px', border: '1px solid ' + palette.line, borderRadius: radius, fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: palette.ink }) + '">' +
-      '<span>' + label + '</span>' +
-      '<span style="display:flex;align-items:center;gap:2px">' + step(-1, '&minus;', 'Kurangi') +
-      '<input class="zd2-num" type="number" min="0" inputmode="numeric" data-zd2-field="' + field + '" value="' + (attending ? def[field] : 0) + '" aria-label="' + label + '" style="' + styleStr({ width: px(30), border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', color: palette.ink, fontFamily: 'inherit', fontSize: px(13), padding: 0 }) + '">' +
-      step(1, '+', 'Tambah') + '</span></div>';
+      '<span>' + escapeHtml(label) + '</span>' +
+      '<span style="display:flex;align-items:center;gap:2px">' + step(-1, '&minus;', ctx.ui.decrease) +
+      '<input class="zd2-num" type="number" min="0" inputmode="numeric" data-zd2-field="' + field + '" value="' + (attending ? def[field] : 0) + '" aria-label="' + escapeHtml(label) + '" style="' + styleStr({ width: px(30), border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', color: palette.ink, fontFamily: 'inherit', fontSize: px(13), padding: 0 }) + '">' +
+      step(1, '+', ctx.ui.increase) + '</span></div>';
   }
 
   // --- guest-only behaviour, layered on ZeDocCore's node views ---------------
@@ -323,11 +391,11 @@
     };
     var itemsHtml = '';
     if (icsHref) {
-      itemsHtml += '<a href="' + escapeHtml(icsHref) + '" download="acara.ics" style="' + styleStr(itemStyle) + '">Download .ics</a>';
+      itemsHtml += '<a href="' + escapeHtml(icsHref) + '" download="acara.ics" style="' + styleStr(itemStyle) + '">' + escapeHtml(ctx.ui.downloadIcs) + '</a>';
     }
     if (gcalHref) {
       var gcalStyle = Object.assign({}, itemStyle, icsHref ? { borderTop: '1px solid ' + ctx.theme.palette.line } : {});
-      itemsHtml += '<a href="' + escapeHtml(gcalHref) + '" target="_blank" rel="noopener" style="' + styleStr(gcalStyle) + '">Tambah ke Google Calendar</a>';
+      itemsHtml += '<a href="' + escapeHtml(gcalHref) + '" target="_blank" rel="noopener" style="' + styleStr(gcalStyle) + '">' + escapeHtml(ctx.ui.addGoogle) + '</a>';
     }
     return '<div data-zd2-cal-wrap style="' + wrapStyle + '">' +
       '<div data-zd2-cal-toggle style="width:100%;height:100%;cursor:pointer"></div>' +
@@ -489,9 +557,9 @@
           view.attrs = guestCountAttrs(ctx.repeatItem);
           view.style = Object.assign({}, wrapStyle, { display: countAttending ? 'flex' : 'none', gap: px(10), alignItems: 'center' });
           var prevAnswer = ctx.data.guestEventRsvp && ctx.data.guestEventRsvp[ctx.repeatItem.nama_acara || ''];
-          var summary = guestSummaryText((prevAnswer && prevAnswer.dewasa) || 0, (prevAnswer && prevAnswer.anak) || 0);
+          var summary = guestSummaryText((prevAnswer && prevAnswer.dewasa) || 0, (prevAnswer && prevAnswer.anak) || 0, ctx.ui);
           view.children = [
-            { raw: guestCountHtml('dewasa', 'Dewasa', ctx) }, { raw: guestCountHtml('anak', 'Anak', ctx) },
+            { raw: guestCountHtml('dewasa', ctx.ui.adult, ctx) }, { raw: guestCountHtml('anak', ctx.ui.child, ctx) },
             // shown instead of the two boxes while the page is locked (body[data-zd2-locked])
             { raw: '<div class="zd2-sum" style="' + styleStr({ display: 'none', flex: 1, alignItems: 'center', height: '100%', fontFamily: ctx.theme.fonts.body, fontSize: px(13), color: ctx.theme.palette.ink }) + '">' + escapeHtml(summary) + '</div>' }
           ];
@@ -742,15 +810,15 @@
         var back = add(document.body, 'div', 'zd2-sheet-back');
         var sheet = add(back, 'div', 'zd2-sheet');
         paint(sheet);
-        add(sheet, 'p', 'zd2-eyebrow', 'Sebelum Melanjutkan');
-        add(sheet, 'p', 'zd2-sheet-title', 'Ada beberapa hal yang ingin kami ketahui');
+        add(sheet, 'p', 'zd2-eyebrow', cfg.t.sheetEyebrow);
+        add(sheet, 'p', 'zd2-sheet-title', cfg.t.sheetTitle);
         cfg.questions.forEach(function (q) {
           var field = add(sheet, 'div', 'zd2-field');
           add(field, 'div', 'zd2-label', q.label);
           if (q.type === 'yesno') {
             var choices = add(field, 'div', 'zd2-choices');
-            var yes = add(choices, 'button', 'zd2-choice', 'Ya');
-            var no = add(choices, 'button', 'zd2-choice', 'Tidak');
+            var yes = add(choices, 'button', 'zd2-choice', cfg.t.yes);
+            var no = add(choices, 'button', 'zd2-choice', cfg.t.no);
             yes.type = no.type = 'button';
             var show = function () {
               yes.classList.toggle('zd2-active', values[q.id] === true);
@@ -763,14 +831,14 @@
             var input = add(field, 'input', 'zd2-text');
             input.type = 'text';
             input.maxLength = 300;
-            input.placeholder = q.placeholder || 'Opsional';
+            input.placeholder = q.placeholder || cfg.t.optional;
             input.value = values[q.id] || '';
             input.addEventListener('input', function () { values[q.id] = input.value; });
           }
         });
         var actions = add(sheet, 'div', 'zd2-actions');
-        var send = add(actions, 'button', 'zd2-send', 'Kirim Jawaban');
-        var skip = add(actions, 'button', 'zd2-skip', 'Lewati');
+        var send = add(actions, 'button', 'zd2-send', cfg.t.sheetSend);
+        var skip = add(actions, 'button', 'zd2-skip', cfg.t.sheetSkip);
         send.type = skip.type = 'button';
         var before = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
@@ -804,17 +872,17 @@
       var head = add(note, 'div', 'zd2-note-head');
       var title = add(head, 'p', 'zd2-note-title');
       add(title, 'span', 'zd2-note-check', '\u2713');
-      add(title, 'span', null, 'RSVP Tercatat');
+      add(title, 'span', null, cfg.t.noteTitle);
       var closeBtn = add(head, 'button', 'zd2-note-close', '\u00d7');
       closeBtn.type = 'button';
-      closeBtn.setAttribute('aria-label', 'Tutup');
+      closeBtn.setAttribute('aria-label', cfg.t.close);
       names.forEach(function (name) {
         var counts = sent[name] || {};
         var parts = [];
-        if (counts.dewasa) parts.push(counts.dewasa + ' Dewasa');
-        if (counts.anak) parts.push(counts.anak + ' Anak');
+        if (counts.dewasa) parts.push(cfg.t.noteAdult.replace('{n}', counts.dewasa));
+        if (counts.anak) parts.push(cfg.t.noteChild.replace('{n}', counts.anak));
         var line = add(note, 'div', 'zd2-note-event');
-        add(line, 'div', 'zd2-note-name', name + ' \u2014 ' + (parts.length ? parts.join(', ') + ' akan hadir' : 'Tidak dapat hadir'));
+        add(line, 'div', 'zd2-note-name', name + ' \u2014 ' + (parts.length ? cfg.t.noteYes.replace('{parts}', parts.join(', ')) : cfg.t.noteNo));
         var info = cfg.events[name];
         var meta = info ? [info.keterangan, info.venue].filter(Boolean).join(' \u00b7 ') : '';
         if (meta) add(line, 'div', 'zd2-note-meta', meta);
@@ -858,7 +926,8 @@
   function giftDeclinedArtboard(artboard, data) {
     var fields = data.fields || {};
     var envelopeOff = (data.sections || {}).envelope === false;
-    var message = envelopeOff ? (fields.teks_pesan_tanpa_kado || NO_GIFT_MESSAGE) : (fields.teks_pesan_tanpa_kado_fisik || NO_PHYSICAL_GIFT_MESSAGE);
+    var message = envelopeOff ? (fields.teks_pesan_tanpa_kado || data.textNoGiftMessage || NO_GIFT_MESSAGE)
+      : (fields.teks_pesan_tanpa_kado_fisik || data.textNoPhysicalGiftMessage || NO_PHYSICAL_GIFT_MESSAGE);
     var width = 320;
     var node = {
       id: 'zd-gift-declined', name: 'Gift declined message', type: 'text',
@@ -874,6 +943,11 @@
     opts = opts || {};
     motionUsed = { any: false, reveal: false, presets: {} };
     data = data || {};
+    // The guest's language: the preset (fields, hardcoded-text replacements, script texts) merged in
+    // before anything reads the data. opts.labels, else the page's own window.INVITATION_LABELS.
+    var labels = opts.labels || (typeof globalThis !== 'undefined' ? globalThis.INVITATION_LABELS : undefined);
+    data = ZeDocCore.applyLanguage(data, data.language && labels && labels[data.language]);
+    var ui = uiText(data);
     data.fields = data.fields || {};
     data.images = data.images || {};
     data.links = data.links || {};
@@ -905,7 +979,7 @@
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
     if (artboards.length === 0) artboards = doc.artboards.slice(0, 1);
-    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode };
+    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode, ui: ui, replacements: data.textReplacements };
 
     // A section's ctx swaps in its own merged theme (mergeTheme) so its
     // colours/fonts pick up ArtboardStyle.tsx's override (section.style) and,
@@ -927,7 +1001,7 @@
         fontStyleOverride = mergeFontStyleOverride(fontStyleOverride, block.style.fontStyle);
       }
       if (theme === doc.theme && !fontStyleOverride) return ctx;
-      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride };
+      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride, ui: ui, replacements: data.textReplacements };
     }
 
     var stageWidth = artboards[0].size.w;
@@ -1109,7 +1183,7 @@
     // there's no single hand-drawn node to carry them. Status feedback is the zd2Toast() below, not an inline
     // message line - the hand-drawn templates have no spare decorative node
     // to repurpose as one; upgrade path is picking one more name to match on.
-    var handDrawnRsvpWishScript = '(function(){' +
+    var handDrawnRsvpWishScript = '(function(){var T=window.zd2T;' +
       'function fallbackCopy(text){var ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(e){}document.body.removeChild(ta);}' +
       // A real, in-page toast instead of alert() - many guests open this
       // link inside WhatsApp/Instagram's in-app browser, which routinely
@@ -1135,7 +1209,7 @@
       'if(copyBtn){' +
       'var value=copyBtn.getAttribute("data-zd2-copy-value")||"";' +
       'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).catch(function(){fallbackCopy(value);});}else{fallbackCopy(value);}' +
-      'zd2Toast("Nomor rekening disalin!");' +
+      'zd2Toast(T.copied);' +
       'return;}' +
       'var t=e.target.closest&&e.target.closest("[data-zd2-attend]");' +
       'if(t){' +
@@ -1151,7 +1225,7 @@
       // locked (a repeat visit, or just sent): the button is "Ubah Jawaban" and only unlocks the form
       'if(document.body.hasAttribute("data-zd2-locked")){if(window.zd2Unlock)window.zd2Unlock();return;}' +
       'var slug=document.body.getAttribute("data-zd2-slug")||"",guestId=document.body.getAttribute("data-zd2-guest-id")||"";' +
-      'if(!slug||!guestId||document.body.getAttribute("data-zd2-can-rsvp")==="0"){zd2Toast("Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.");return;}' +
+      'if(!slug||!guestId||document.body.getAttribute("data-zd2-can-rsvp")==="0"){zd2Toast(T.needPersonalLink);return;}' +
       'var payload={},seen={},noOne=false;' +
       'Array.prototype.forEach.call(document.querySelectorAll("[data-zd2-attend][data-zd2-selected=\\"1\\"]"),function(el){' +
       'var ev=el.getAttribute("data-zd2-event");if(!ev||seen[ev])return;seen[ev]=1;' +
@@ -1162,34 +1236,34 @@
       'var counts=attending&&window.zd2Counts?window.zd2Counts(ev):null;' +
       'if(counts&&counts.dewasa+counts.anak===0)noOne=true;' +
       'payload[ev]=attending?(counts||{dewasa:1,anak:0}):{dewasa:0,anak:0};});' +
-      'if(noOne){zd2Toast("Isi jumlah tamu yang akan hadir.");return;}' +
+      'if(noOne){zd2Toast(T.needGuests);return;}' +
       // the organizer's extra questions are asked first, only when someone is coming (window.zd2Questions)
       'var attendingAny=Object.keys(payload).some(function(k){return payload[k].dewasa+payload[k].anak>0;});' +
-      'var send=function(answers){zd2Toast("Mengirim...");var body={event_rsvp:payload};if(answers)body.rsvp_answers=answers;' +
+      'var send=function(answers){zd2Toast(T.sending);var body={event_rsvp:payload};if(answers)body.rsvp_answers=answers;' +
       'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})' +
       '.then(function(r){' +
-      'if(!r.ok){zd2Toast("Gagal mengirim konfirmasi, coba lagi.");return;}' +
+      'if(!r.ok){zd2Toast(T.rsvpFailed);return;}' +
       'if(window.zd2Lock)window.zd2Lock(payload);' +
       // "RSVP Tercatat" replaces the plain toast once the send actually succeeded
       'if(window.zd2Recorded){var t=document.getElementById("zd2-toast");if(t)t.style.opacity="0";window.zd2Recorded(payload);}' +
-      'else zd2Toast("Terima kasih, konfirmasi Anda telah kami catat.");})' +
-      '.catch(function(){zd2Toast("Gagal mengirim konfirmasi, periksa koneksi Anda.");});};' +
+      'else zd2Toast(T.rsvpThanks);})' +
+      '.catch(function(){zd2Toast(T.rsvpOffline);});};' +
       'if(attendingAny&&window.zd2Questions)window.zd2Questions(send);else send(null);' +
       'return;}' +
       'if(e.target.closest&&e.target.closest("#zd2-wish-submit")){' +
       'var wslug=document.body.getAttribute("data-zd2-slug")||"";' +
       'var nameEl=document.getElementById("zd2-wish-name"),msgEl=document.getElementById("zd2-wish-message");' +
       'var message=msgEl?msgEl.value.trim():"";' +
-      'var name=(nameEl?nameEl.value.trim():"")||"Tamu Undangan";' +
-      'if(!message){zd2Toast("Tuliskan ucapan Anda terlebih dahulu.");return;}' +
-      'if(!wslug){zd2Toast("Ucapan tidak dapat dikirim dari pratinjau ini.");return;}' +
-      'zd2Toast("Mengirim...");' +
+      'var name=(nameEl?nameEl.value.trim():"")||T.guestFallback;' +
+      'if(!message){zd2Toast(T.wishEmpty);return;}' +
+      'if(!wslug){zd2Toast(T.wishPreview);return;}' +
+      'zd2Toast(T.sending);' +
       'fetch("/api/invitations/"+encodeURIComponent(wslug)+"/wishes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name,message:message})})' +
       '.then(function(r){' +
-      'if(!r.ok){zd2Toast(r.status===429?"Anda sudah mencapai batas 3 ucapan & doa.":"Gagal mengirim ucapan, coba lagi.");return;}' +
-      'zd2Toast("Terima kasih atas doa dan ucapannya!");setTimeout(function(){location.reload();},900);' +
+      'if(!r.ok){zd2Toast(r.status===429?T.wishLimit:T.wishFailed);return;}' +
+      'zd2Toast(T.wishThanks);setTimeout(function(){location.reload();},900);' +
       '})' +
-      '.catch(function(){zd2Toast("Gagal mengirim ucapan, periksa koneksi Anda.");});' +
+      '.catch(function(){zd2Toast(T.wishOffline);});' +
       '}});' +
       '})();';
 
@@ -1209,7 +1283,7 @@
         return '<svg class="' + cls + '" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="position:relative">' + path + '</svg>';
       };
       musicHtml = '<audio id="zd-music" loop preload="none" src="' + escapeHtml(musicUrl) + '"></audio>' +
-        '<button id="zd-music-btn" type="button" aria-label="Musik latar" style="' + styleStr({
+        '<button id="zd-music-btn" type="button" aria-label="' + escapeHtml(ui.musicLabel) + '" style="' + styleStr({
           position: 'fixed', bottom: '24px', right: 'max(16px, calc(50% - ' + (stageWidth / 2) + 'px + 16px))', zIndex: 150,
           width: px(46), height: px(46), padding: 0, border: 'none', borderRadius: '50%', cursor: 'pointer',
           background: musicPalette.accent, color: musicPalette.accentInk, boxShadow: '0 4px 16px rgba(0,0,0,.4)',
@@ -1239,6 +1313,7 @@
     // What rsvpFollowUp draws with: the template's own palette, the organizer's questions (up to 3,
     // as the server also caps them), this guest's earlier answers, and each event's date/venue.
     var followUpCfg = {
+      t: ui,
       theme: { bg: doc.theme.palette.bg, ink: doc.theme.palette.ink, accent: doc.theme.palette.accent, accentInk: doc.theme.palette.accentInk, font: doc.theme.fonts.body },
       questions: (Array.isArray(data.customRsvpQuestions) ? data.customRsvpQuestions : []).filter(function (q) { return q && q.id && q.label; }).slice(0, 3),
       answers: Object.assign({}, data.guestRsvpAnswers),
@@ -1251,7 +1326,7 @@
     // cap takes what is over off the field just edited. Choosing "Ya" starts from the
     // event's defaults when both are 0, "Tidak" zeroes them and hides the box.
     // window.zd2Counts(event) hands the numbers to the RSVP submit above.
-    var guestCountScript = '(function(){' +
+    var guestCountScript = '(function(){var T=window.zd2T;' +
       'function all(){return Array.prototype.slice.call(document.querySelectorAll("[data-zd2-counts-event]"));}' +
       'function wrapFor(ev){return all().filter(function(w){return w.getAttribute("data-zd2-counts-event")===ev;})[0]||null;}' +
       'function box(w,f){return w.querySelector("input[data-zd2-field="+f+"]");}' +
@@ -1267,9 +1342,9 @@
       // the submit button reads "Ubah Jawaban" while locked; its own text is kept to put back
       'function label(){var t=document.querySelector("#zd2-rsvp-submit [data-zd-text-node]");return t&&t.firstElementChild;}' +
       'function relabel(locked){var l=label();if(!l)return;if(l.getAttribute("data-zd2-orig")===null)l.setAttribute("data-zd2-orig",l.textContent);' +
-      'l.textContent=locked?"Ubah Jawaban":l.getAttribute("data-zd2-orig");}' +
+      'l.textContent=locked?T.changeAnswer:l.getAttribute("data-zd2-orig");}' +
       'window.zd2Lock=function(sent){all().forEach(function(w){var c=sent[w.getAttribute("data-zd2-counts-event")];if(!c)return;' +
-      'w.querySelector(".zd2-sum").textContent=c.dewasa+c.anak>0?"Hadir \u00b7 "+c.dewasa+" Dewasa \u00b7 "+c.anak+" Anak":"Mohon maaf tidak dapat hadir.";});' +
+      'w.querySelector(".zd2-sum").textContent=c.dewasa+c.anak>0?T.summaryYes.replace("{d}",c.dewasa).replace("{a}",c.anak):T.summaryNo;});' +
       'document.body.setAttribute("data-zd2-locked","1");relabel(true);};' +
       'window.zd2Unlock=function(){document.body.removeAttribute("data-zd2-locked");relabel(false);};' +
       'if(document.body.hasAttribute("data-zd2-locked"))relabel(true);' +
@@ -1342,6 +1417,7 @@
       gateHtml +
       lightboxHtml +
       musicHtml +
+      '<script>window.zd2T=' + jsonForScript(ui) + ';</script>' +
       '<script>(function(){' +
       'var W=' + stageWidth + ',H=' + totalHeight + ';' +
       'var stage=document.getElementById("zd-stage"),wrap=document.getElementById("zd-wrap");' +
