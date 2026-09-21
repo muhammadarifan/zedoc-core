@@ -502,7 +502,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(!engine.render(wishDoc, { guestId: 'g1' }).includes('function rsvpFollowUp'))
   assert.ok(page.includes('window.zd2Questions(send)') && page.includes('body.rsvp_answers=answers') && page.includes('window.zd2Recorded(payload)'))
   // running it with no questions defines the notice but not the modal
-  const win = {}
+  const win = { zd2Plural: core.pluralize }
   const stubEl = () => ({ style: { setProperty() {} }, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {}, addEventListener() {}, setAttribute() {}, remove() {}, set className(v) {}, set textContent(v) {} })
   const run = (c) => vm.runInNewContext('(' + engine.render.toString().length + ',0);' + script[1].replace(/\)\(\{"t".*$/, ')(' + JSON.stringify(c) + ');'), { window: win, document: { createElement: stubEl, head: stubEl(), body: stubEl(), querySelector: () => null }, requestAnimationFrame: (f) => f(), setTimeout: () => 0, clearTimeout() {} })
   run({ ...cfg, questions: [] })
@@ -549,7 +549,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   // the quota note in the page's language (Indonesian is what the tests above pin)
   const ev = [{ nama_acara: 'A' }]
   const note = (language, quota) => core.guestEvents({ language, events: ev, guestId: 'g', guestEventQuota: { A: quota } }).events[0].quotaNote
-  assert.strictEqual(note('en', { mode: 'category', dewasa: 2, anak: 1 }), 'With all due respect, we invite you to attend with your family (guests invited: 2 adult(s) and 1 child(ren)).')
+  assert.strictEqual(note('en', { mode: 'category', dewasa: 2, anak: 1 }), 'With all due respect, we invite you to attend with your family (guests invited: 2 adults and 1 child).')
   assert.strictEqual(note('en', { mode: 'total', total: 4 }), 'With all due respect, we invite you to attend with your family (guests invited: 4 people).')
   assert.strictEqual(note('zh', { mode: 'category', dewasa: 2, anak: 1 }), '恭请您与家人一同出席（受邀人数：2 位成人，1 位儿童）。')
   assert.ok(note('fr', { mode: 'total', total: 4 }).endsWith('(jumlah undangan: 4 orang).')) // an unknown language reads as Indonesian
@@ -578,8 +578,11 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   const rsvpDoc = docOf([{ id: 'r', name: 'RSVP event cards', type: 'repeat', listKey: 'events', visible: true, opacity: 1, frame: frame(32, 106, 366, 158), children: [cardShape('bg', 'RSVP card bg', 0, 0, 366, 148), attendGroup] }, T('h', 'Head')])
   const rsvpEn = engine.render(rsvpDoc, { language: 'en', events: [{ nama_acara: 'Akad', tanggal: '2027-06-12', jam: '08:00' }], guestId: 'g1', guestEventQuota: { Akad: { mode: 'category', dewasa: 2, anak: 1 } }, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 } } }, { labels })
   assert.ok(rsvpEn.includes('<span>Adults</span>') && rsvpEn.includes('<span>Children</span>') && rsvpEn.includes('aria-label="Decrease adults"'))
-  assert.ok(rsvpEn.includes('>Attending · 2 adult(s) · 1 child(ren)</div>'))
-  assert.ok(rsvpEn.includes('guests invited: 2 adult(s) and 1 child(ren)')) // the quota note, drawn by the card's note text
+  assert.ok(rsvpEn.includes('>Attending · 2 adults · 1 child</div>'))
+  assert.ok(rsvpEn.includes('window.zd2Plural=function pluralize(')) // the browser has the same helper for the counts it redraws
+  assert.deepStrictEqual(['0 adult(s)', '1 adult(s)', '2 adult(s)', '10 adult(s)', '1 child(ren)', '2 child(ren)', '1 adult(s) and 3 child(ren)', 'Hadir · 1 Dewasa'].map(core.pluralize),
+    ['0 adults', '1 adult', '2 adults', '10 adults', '1 child', '2 children', '1 adult and 3 children', 'Hadir · 1 Dewasa'])
+  assert.ok(rsvpEn.includes('guests invited: 2 adults and 1 child')) // the quota note, drawn by the card's note text
   // a no-gift message can come from the preset's script texts, after the couple's own field
   const gift = (data) => engine.render((() => { const d = docOf([]); d.artboards = [part('send-gift', 300)]; return d })(), data, { labels })
   assert.ok(gift({ language: 'en', sections: { 'send-gift': false, envelope: false } }).includes('Your presence is the gift.'))

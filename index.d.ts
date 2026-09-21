@@ -277,6 +277,7 @@ declare const core: {
    * is how much taller the section became. No wishes repeat, one page of wishes, or an existing pager: unchanged.
    */
   withWishPager<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[], total: number): { nodes: T[]; extra: number; added: boolean }
+  pluralize(text: string): string
   withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }

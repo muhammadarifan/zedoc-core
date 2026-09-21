@@ -281,7 +281,7 @@
 
   // What a locked card says instead of the steppers (the .dc.html form's wording).
   function guestSummaryText(dewasa, anak, ui) {
-    return dewasa + anak > 0 ? fmt(ui.summaryYes, { d: dewasa, a: anak }) : ui.summaryNo;
+    return dewasa + anak > 0 ? ZeDocCore.pluralize(fmt(ui.summaryYes, { d: dewasa, a: anak })) : ui.summaryNo;
   }
 
   function guestCountAttrs(ev) {
@@ -998,8 +998,8 @@
       names.forEach(function (name) {
         var counts = sent[name] || {};
         var parts = [];
-        if (counts.dewasa) parts.push(cfg.t.noteAdult.replace('{n}', counts.dewasa));
-        if (counts.anak) parts.push(cfg.t.noteChild.replace('{n}', counts.anak));
+        if (counts.dewasa) parts.push(window.zd2Plural(cfg.t.noteAdult.replace('{n}', counts.dewasa)));
+        if (counts.anak) parts.push(window.zd2Plural(cfg.t.noteChild.replace('{n}', counts.anak)));
         var line = add(note, 'div', 'zd2-note-event');
         add(line, 'div', 'zd2-note-name', name + ' \u2014 ' + (parts.length ? cfg.t.noteYes.replace('{parts}', parts.join(', ')) : cfg.t.noteNo));
         var info = cfg.events[name];
@@ -1519,7 +1519,7 @@
       'function relabel(locked){var l=label();if(!l)return;if(l.getAttribute("data-zd2-orig")===null)l.setAttribute("data-zd2-orig",l.textContent);' +
       'l.textContent=locked?T.changeAnswer:l.getAttribute("data-zd2-orig");}' +
       'window.zd2Lock=function(sent){all().forEach(function(w){var c=sent[w.getAttribute("data-zd2-counts-event")];if(!c)return;' +
-      'w.querySelector(".zd2-sum").textContent=c.dewasa+c.anak>0?T.summaryYes.replace("{d}",c.dewasa).replace("{a}",c.anak):T.summaryNo;});' +
+      'w.querySelector(".zd2-sum").textContent=c.dewasa+c.anak>0?window.zd2Plural(T.summaryYes.replace("{d}",c.dewasa).replace("{a}",c.anak)):T.summaryNo;});' +
       'document.body.setAttribute("data-zd2-locked","1");relabel(true);};' +
       'window.zd2Unlock=function(){document.body.removeAttribute("data-zd2-locked");relabel(false);};' +
       'if(document.body.hasAttribute("data-zd2-locked"))relabel(true);' +
@@ -1593,7 +1593,7 @@
       gateHtml +
       lightboxHtml +
       musicHtml +
-      '<script>window.zd2T=' + jsonForScript(ui) + ';</script>' +
+      '<script>window.zd2T=' + jsonForScript(ui) + ';window.zd2Plural=' + ZeDocCore.pluralize.toString() + ';</script>' +
       '<script>(function(){' +
       'var W=' + stageWidth + ',H=' + totalHeight + ';' +
       'var stage=document.getElementById("zd-stage"),wrap=document.getElementById("zd-wrap");' +

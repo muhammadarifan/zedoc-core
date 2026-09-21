@@ -1236,6 +1236,11 @@
     zh: { lead: '恭请您与家人一同出席（受邀人数：', end: '）。', total: '{n} 人', adult: '{n} 位成人', child: '{n} 位儿童', and: '，' }
   };
 
+  // English counts are written "2 adult(s)": one drops the "(s)"/"(ren)", any other number keeps it as "s"/"ren".
+  function pluralize(text) {
+    return String(text).replace(/(\d+)( [a-z]+)\((s|ren)\)/g, function (m, n, word, end) { return n + word + (n === '1' ? '' : end); });
+  }
+
   function guestEvents(data) {
     data = data || {};
     var events = Array.isArray(data.events) ? data.events : null;
@@ -1276,7 +1281,7 @@
           if (q.dewasa) parts.push(note.adult.replace('{n}', q.dewasa));
           if (q.anak) parts.push(note.child.replace('{n}', q.anak));
           out.hasQuotaNote = true;
-          out.quotaNote = note.lead + parts.join(note.and) + note.end;
+          out.quotaNote = pluralize(note.lead + parts.join(note.and) + note.end);
         }
       }
       out.rsvpUntracked = !out.rsvpShowInputs;
@@ -1385,7 +1390,7 @@
   }
 
   return {
-    SECTIONS: SECTIONS, sectionOf: sectionOf, WISHES_PER_PAGE: WISHES_PER_PAGE, withWishPager: withWishPager, guestEvents: guestEvents, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
+    SECTIONS: SECTIONS, sectionOf: sectionOf, WISHES_PER_PAGE: WISHES_PER_PAGE, withWishPager: withWishPager, guestEvents: guestEvents, pluralize: pluralize, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,
