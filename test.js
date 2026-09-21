@@ -669,4 +669,26 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   for (const name of ['Social icon', 'Social icon label', 'Profile social', 'Social link']) assert.ok(core.GUEST_ROLES.some((r) => r.name === name && r.role === 'social-link' && r.optional))
 }
 
+// --- the map pin, WhatsApp and live-streaming links only let web addresses through ------------------
+{
+  const shapeAt = (id, name, x, y, w, h) => ({ ...box(id, { name }), frame: { x, y, w, h, rotate: 0, flipX: false, flipY: false } })
+  const mapButtons = { id: 'eb', name: 'Event buttons', type: 'group', frame: frame(16, 100, 300, 34), opacity: 1, visible: true, locked: false, children: [shapeAt('m', 'Map button', 0, 0, 140, 34)] }
+  const eventsDoc = docOf([{ id: 'r', name: 'Cards', type: 'repeat', listKey: 'events', visible: true, opacity: 1, frame: frame(0, 50, 400, 150), children: [T('n', 'Nama', { binding: { key: 'nama_acara' } }), mapButtons] }, T('h', 'Head')])
+  const mapLinks = (map_href) => [...engine.render(eventsDoc, { events: [{ nama_acara: 'A', map_href }] }).matchAll(/<a href="([^"]*)" target="_blank"/g)].map((m) => m[1])
+  assert.deepStrictEqual(mapLinks('https://maps.google.com/?q=1,2'), ['https://maps.google.com/?q=1,2'])
+  assert.deepStrictEqual(mapLinks(' maps.app.goo.gl/abc '), ['https://maps.app.goo.gl/abc']) // a pasted short link without the scheme now works
+  for (const bad of ['', '#', 'javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'data:text/html,<b>x</b>', 'vbscript:x', '//evil.example/x', 'just words', undefined]) assert.deepStrictEqual(mapLinks(bad), [], String(bad)) // no button link, and nothing of it in the page
+  assert.ok(!engine.render(eventsDoc, { events: [{ nama_acara: 'A', map_href: 'javascript:alert(1)' }] }).includes('javascript:'))
+  // the address is escaped into its attribute
+  assert.deepStrictEqual(mapLinks('https://x.example/"><script>'), ['https://x.example/&quot;&gt;&lt;script&gt;'])
+
+  const groupOf = (name, text) => ({ id: name, name, type: 'group', frame: frame(10, 60, 300, 40), opacity: 1, visible: true, locked: false, children: [T('l', text)] })
+  const waDoc = docOf([groupOf('WhatsApp button', 'Konfirmasi WA'), groupOf('Join button', 'Gabung'), T('h', 'Head')])
+  const anchorsOf = (links) => [...engine.render(waDoc, { links }).matchAll(/<a href="([^"]*)" target="_blank"/g)].map((m) => m[1])
+  assert.deepStrictEqual(anchorsOf({ link_konfirmasi_wa: 'https://wa.me/6281?text=Halo%20Bagas', link_live_streaming: 'youtube.com/live/x' }), ['https://wa.me/6281?text=Halo%20Bagas', 'https://youtube.com/live/x'])
+  assert.deepStrictEqual(anchorsOf({ link_konfirmasi_wa: 'javascript:alert(document.cookie)', link_live_streaming: 'data:text/html,x' }), []) // the buttons stay plain drawings
+  const unsafePage = engine.render(waDoc, { links: { link_konfirmasi_wa: 'javascript:alert(1)' } })
+  assert.ok(!unsafePage.includes('javascript:') && unsafePage.includes('Konfirmasi WA')) // the button's own drawing is still there
+}
+
 console.log('zedoc-core: ok')

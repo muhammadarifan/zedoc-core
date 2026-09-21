@@ -130,8 +130,9 @@
   // writes by convention (see src/worker.js's own hasRealMapHref) - ported
   // here so the Map button link only appears once there's somewhere real to
   // send a guest.
+  // (through safeHref, so the "#" placeholder and any javascript:/data: address count as unset)
   function hasRealMapHref(event) {
-    return !!(event && event.map_href && event.map_href !== '#');
+    return !!(event && safeHref(event.map_href));
   }
 
   function icsEscape(s) {
@@ -308,11 +309,11 @@
       step(1, '+', ctx.ui.increase) + '</span></div>';
   }
 
-  // --- a couple's profile links --------------------------------------------------------------
-  // The couple card's Instagram/Facebook come from the couple item's own `ig` / `fb` (the wizard's
-  // "Instagram (URL)" / "Facebook (URL)"). They are typed by the couple and end up in a guest's browser,
-  // so only web links go out: an address with any other scheme (javascript:, data:...) is dropped, and a
-  // bare "instagram.com/bagas" gets https://. Anything else (a lone @handle) is no link.
+  // --- links typed by the organizer / couple ------------------------------------------------
+  // Every address a person types - the couple card's Instagram/Facebook (the couple item's `ig` / `fb`), the
+  // map pin, the WhatsApp and live-streaming buttons - ends up in a guest's browser, so only web links go
+  // out: an address with any other scheme (javascript:, data:...) is dropped, and a bare
+  // "instagram.com/bagas" gets https://. Anything else ("#", a lone @handle) is no link.
   function safeHref(url) {
     var text = String(url == null ? '' : url).trim();
     if (!text || /\s/.test(text)) return '';
@@ -501,7 +502,7 @@
       if (childRole && childRole.role === 'map-button') {
         if (!hasRealMapHref(event)) return;
         var linkStyle = styleStr(Object.assign(frameStyle(child.frame), { display: 'block' }));
-        html += '<a href="' + escapeHtml(event.map_href) + '" target="_blank" rel="noopener" style="' + linkStyle + '"></a>';
+        html += '<a href="' + escapeHtml(safeHref(event.map_href)) + '" target="_blank" rel="noopener" style="' + linkStyle + '"></a>';
         return;
       }
       if (childRole && childRole.role === 'calendar-button') {
@@ -687,7 +688,7 @@
           return;
         }
         if (role === 'wa-button' || role === 'live-stream-join') {
-          var groupHref = linkVal(ctx, role === 'wa-button' ? 'link_konfirmasi_wa' : 'link_live_streaming');
+          var groupHref = safeHref(linkVal(ctx, role === 'wa-button' ? 'link_konfirmasi_wa' : 'link_live_streaming'));
           if (groupHref) {
             return {
               tag: 'a',
