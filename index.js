@@ -303,7 +303,12 @@
   function typographySize(node, ctx) {
     var sizes = ctx.data && ctx.data.typography;
     if (!sizes) return null;
-    if (node.binding) return typographyPx(sizes[node.binding.key]);
+    if (node.binding) {
+      // a couple card's full name is bound to the item key `nama`; the wizard's "Nama lengkap mempelai" size is
+      // stored under the field key the .dc.html markup put on that same element
+      var key = node.binding.key === 'nama' && ctx.repeatListKey === 'couple' ? 'nama_lengkap_mempelai' : node.binding.key;
+      return typographyPx(sizes[key]);
+    }
     var role = guestRole(node);
     if (role && role.role === 'couple-names') return typographyPx(sizes.nama_panggilan_mempelai_1) || typographyPx(sizes.nama_panggilan_mempelai_2);
     return null;
@@ -395,6 +400,8 @@
     { name: 'Social icon label', type: 'text', role: 'social-link', optional: true },
     { name: 'Profile social', type: 'text', role: 'social-link', optional: true },
     { name: 'Social link', type: 'text', role: 'social-link', optional: true },
+    // the "‹ Sebelumnya  Halaman 1 dari 3  Selanjutnya ›" row under the wishes list (see withWishPager)
+    { name: 'Wish pager', type: 'group', role: 'wish-pager', optional: true },
     { name: 'Event buttons', type: 'group', role: 'event-buttons' },
     { name: 'Map button', type: '*', role: 'map-button' },
     { name: 'Calendar button', type: '*', role: 'calendar-button' },
@@ -1351,8 +1358,34 @@
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Wishes paging. A popular invitation can hold dozens of wishes and the list would run for screens, so the guest
+  // page draws WISHES_PER_PAGE of them and a pager under the list swaps the next batch into the same slots (as the
+  // .dc.html engine did with its 5 per page). This adds the pager to the wishes section: one 'Wish pager' group at
+  // the end of the list's baseline box (it follows the list down when the list has several items), and the section
+  // grows by the pager's height. Nothing changes for a list that fits on one page. Returns { nodes, extra, added }.
+  // ---------------------------------------------------------------------
+  var WISHES_PER_PAGE = 5, WISH_PAGER_H = 32, WISH_PAGER_GAP = 12;
+  function withWishPager(nodes, total) {
+    var repeat = nodes.filter(function (n) { return n.type === 'repeat' && n.listKey === 'wishes'; })[0];
+    var has = nodes.some(function (n) { var r = guestRole(n); return !!r && r.role === 'wish-pager'; });
+    if (!(total > WISHES_PER_PAGE) || !repeat || has) return { nodes: nodes, extra: 0, added: false };
+    var end = repeat.frame.y + repeat.frame.h * (repeat.verifiedCount != null ? repeat.verifiedCount : 1);
+    var extra = WISH_PAGER_H + WISH_PAGER_GAP;
+    var pager = {
+      id: 'zd-wish-pager', name: 'Wish pager', type: 'group', opacity: 1, visible: true, locked: false,
+      frame: { x: repeat.frame.x, y: end, w: repeat.frame.w, h: WISH_PAGER_H, rotate: 0, flipX: false, flipY: false }, children: []
+    };
+    var out = nodes.map(function (n) {
+      if (n !== repeat && n.frame.y >= end - 1) return Object.assign({}, n, { frame: Object.assign({}, n.frame, { y: n.frame.y + extra }) });
+      return n;
+    });
+    out.push(pager);
+    return { nodes: out, extra: extra, added: true };
+  }
+
   return {
-    SECTIONS: SECTIONS, sectionOf: sectionOf, guestEvents: guestEvents, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
+    SECTIONS: SECTIONS, sectionOf: sectionOf, WISHES_PER_PAGE: WISHES_PER_PAGE, withWishPager: withWishPager, guestEvents: guestEvents, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,

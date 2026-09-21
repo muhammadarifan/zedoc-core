@@ -270,6 +270,13 @@ declare const core: {
    * document's `svg` node draws on a guest page goes through this - never the raw markup.
    */
   sanitizeSvg(markup: unknown): string
+  /** How many wishes the guest page draws at a time; a pager swaps the rest in. */
+  WISHES_PER_PAGE: number
+  /**
+   * Adds the wishes pager (a 'Wish pager' group) under the wishes list when `total` exceeds WISHES_PER_PAGE; `extra`
+   * is how much taller the section became. No wishes repeat, one page of wishes, or an existing pager: unchanged.
+   */
+  withWishPager<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[], total: number): { nodes: T[]; extra: number; added: boolean }
   withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }

@@ -65,7 +65,8 @@
       sheetEyebrow: 'Sebelum Melanjutkan', sheetTitle: 'Ada beberapa hal yang ingin kami ketahui', yes: 'Ya', no: 'Tidak',
       sheetSend: 'Kirim Jawaban', sheetSkip: 'Lewati', optional: 'Opsional',
       noteTitle: 'RSVP Tercatat', close: 'Tutup', noteAdult: '{n} Dewasa', noteChild: '{n} Anak',
-      noteYes: '{parts} akan hadir', noteNo: 'Tidak dapat hadir'
+      noteYes: '{parts} akan hadir', noteNo: 'Tidak dapat hadir',
+      pagePrev: '‹ Sebelumnya', pageNext: 'Selanjutnya ›', pageOf: 'Halaman {p} dari {n}'
     },
     en: {
       adult: 'Adults', child: 'Children', decrease: 'Decrease', increase: 'Increase',
@@ -81,7 +82,8 @@
       sheetEyebrow: 'Before You Continue', sheetTitle: 'A few things we would like to know', yes: 'Yes', no: 'No',
       sheetSend: 'Send Answers', sheetSkip: 'Skip', optional: 'Optional',
       noteTitle: 'RSVP Recorded', close: 'Close', noteAdult: '{n} adult(s)', noteChild: '{n} child(ren)',
-      noteYes: 'Attending: {parts}', noteNo: 'Unable to attend'
+      noteYes: 'Attending: {parts}', noteNo: 'Unable to attend',
+      pagePrev: '‹ Previous', pageNext: 'Next ›', pageOf: 'Page {p} of {n}'
     },
     zh: {
       adult: '成人', child: '儿童', decrease: '减少', increase: '增加',
@@ -97,7 +99,8 @@
       sheetEyebrow: '继续之前', sheetTitle: '我们想了解几件事', yes: '是', no: '否',
       sheetSend: '提交回答', sheetSkip: '跳过', optional: '选填',
       noteTitle: '回复已记录', close: '关闭', noteAdult: '{n} 位成人', noteChild: '{n} 位儿童',
-      noteYes: '出席：{parts}', noteNo: '无法出席'
+      noteYes: '出席：{parts}', noteNo: '无法出席',
+      pagePrev: '‹ 上一页', pageNext: '下一页 ›', pageOf: '第 {p} / {n} 页'
     }
   };
 
@@ -449,6 +452,11 @@
       attrs['data-zd2-selected'] = selected ? '1' : '0';
       if (ctx.repeatItem.rsvpShowInputs === false) attrs['data-zd2-untracked'] = '1';
     }
+    // a paged wishes list: which slot and which field this text is, so the pager can swap another page into it
+    if (ctx.wishPaging && ctx.repeatListKey === 'wishes' && ctx.repeatItem && node.binding && /^(name|time|message)$/.test(node.binding.key)) {
+      var wishSlot = ctx.data.wishes.indexOf(ctx.repeatItem);
+      if (wishSlot !== -1) { attrs['data-zd2-wish-i'] = String(wishSlot); attrs['data-zd2-wish-key'] = node.binding.key; }
+    }
     textView.attrs = attrs;
     textView.children = [text];
   }
@@ -641,6 +649,21 @@
             }];
             return;
           }
+        }
+
+        // "Wish pager" (under the wishes list, see ZeDocCore.withWishPager): previous / "Halaman 1 dari 3" / next, wired in
+        // wishPagerScript. Starts on page 1, so "previous" is disabled.
+        if (role === 'wish-pager') {
+          var pagerColors = ctx.theme.palette;
+          var pagerButton = styleStr({ padding: '6px 14px', border: '1px solid ' + pagerColors.accent, borderRadius: px(Math.min(ctx.theme.radius || 0, 12)), background: 'transparent', color: pagerColors.accent, fontFamily: 'inherit', fontSize: px(12), cursor: 'pointer' });
+          var pageCount = Math.ceil((ctx.wishPaging || 0) / ZeDocCore.WISHES_PER_PAGE);
+          view.attrs = { 'data-zd2-wish-pager': true };
+          view.style = Object.assign({}, wrapStyle, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: pagerColors.ink });
+          view.children = [{ raw:
+            '<button type="button" data-zd2-wish-prev disabled style="' + pagerButton + '">' + escapeHtml(ctx.ui.pagePrev) + '</button>' +
+            '<span data-zd2-wish-label>' + escapeHtml(fmt(ctx.ui.pageOf, { p: 1, n: pageCount })) + '</span>' +
+            '<button type="button" data-zd2-wish-next style="' + pagerButton + '">' + escapeHtml(ctx.ui.pageNext) + '</button>' }];
+          return;
         }
 
         // "Guest count" (inside the RSVP events repeat, see ZeDocCore.withGuestCounts):
@@ -1073,10 +1096,22 @@
     var guest = ZeDocCore.guestEvents(data);
     data = Object.assign({}, data, { events: guest.events, canRsvp: guest.canRsvp, rsvpLocked: guest.responded });
 
+    // A long wishes list is drawn one page at a time (ZeDocCore.withWishPager): the page is built from the first
+    // page's worth of wishes and the whole list travels as JSON for the pager to swap in.
+    var wishPaging = null;
+    if (Array.isArray(data.wishes) && data.wishes.length > ZeDocCore.WISHES_PER_PAGE) {
+      wishPaging = data.wishes.map(function (w) {
+        w = w || {};
+        return { name: String(w.name == null ? '' : w.name), time: String(w.time == null ? '' : w.time), message: String(w.message == null ? '' : w.message) };
+      });
+      data = Object.assign({}, data, { wishes: data.wishes.slice(0, ZeDocCore.WISHES_PER_PAGE) });
+    }
+    var wishPagerAdded = false;
+
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
     if (artboards.length === 0) artboards = doc.artboards.slice(0, 1);
-    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode, ui: ui, replacements: data.textReplacements };
+    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode, ui: ui, replacements: data.textReplacements, wishPaging: wishPaging ? wishPaging.length : 0 };
 
     // A section's ctx swaps in its own merged theme (mergeTheme) so its
     // colours/fonts pick up ArtboardStyle.tsx's override (section.style) and,
@@ -1098,7 +1133,7 @@
         fontStyleOverride = mergeFontStyleOverride(fontStyleOverride, block.style.fontStyle);
       }
       if (theme === doc.theme && !fontStyleOverride) return ctx;
-      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride, ui: ui, replacements: data.textReplacements };
+      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride, ui: ui, replacements: data.textReplacements, wishPaging: wishPaging ? wishPaging.length : 0 };
     }
 
     var stageWidth = artboards[0].size.w;
@@ -1116,8 +1151,10 @@
       var sectionCtx = ctxFor(section);
       // a guest who may RSVP also says how many are coming: add the counters to the RSVP cards
       var counted = data.canRsvp ? ZeDocCore.withGuestCounts(unwrapBlock(section.nodes)) : { nodes: unwrapBlock(section.nodes), extra: 0 };
-      var sectionLaid = reflowNodes(counted.nodes, data);
-      var sectionHeight = section.size.h + counted.extra + sectionLaid.extra;
+      var paged = wishPaging ? ZeDocCore.withWishPager(counted.nodes, wishPaging.length) : { nodes: counted.nodes, extra: 0, added: false };
+      if (paged.added) wishPagerAdded = true;
+      var sectionLaid = reflowNodes(paged.nodes, data);
+      var sectionHeight = section.size.h + counted.extra + paged.extra + sectionLaid.extra;
       var sectionBodyHtml = sectionLaid.items.map(function (entry, i) { return renderNode(entry.node, sectionCtx, entry.y, sectionLaid.bgHeightGrow[i]); }).join('');
       var sectionBgStyle = styleStr(resolveFill(section.background, sectionCtx));
       var sectionKey = ZeDocCore.sectionOf(section);
@@ -1145,6 +1182,9 @@
       gateHtml = '<div id="zd-gate" style="' + styleStr({ position: 'fixed', inset: 0, zIndex: 1000, overflow: 'hidden', cursor: 'pointer' }) + gateBgStyle +
         'transition:opacity 1.1s ease, visibility 1.1s ease" onclick="' +
         'this.style.opacity=0;this.style.visibility=\'hidden\';this.style.pointerEvents=\'none\'' +
+        // read from the cover down, not from wherever the page was scrolled while the gate covered it
+        // (the .dc.html engine does the same); a #rsvp link scrolls to RSVP afterwards (rsvpLinkScript)
+        ';window.scrollTo(0,0)' +
         // animations behind the gate wait for it to open (zdMotionStart below)
         (motionUsed.any ? ';window.zdMotionStart&&window.zdMotionStart()' : '') + '">' +
         '<div id="zd-gate-stage" data-zd-base-height="' + px(gateTotalHeight) + '" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(envelope.size.w), height: px(gateTotalHeight) }) + gateBgStyle + '">' +
@@ -1194,7 +1234,8 @@
       // same baseline instead of compounding its own previous result.
       'function baseAttr(el,name,read){var v=el.getAttribute(name);if(v===null){v=String(read());el.setAttribute(name,v);}return parseFloat(v)||0;}' +
       'function boxesOf(container){' +
-      'return Array.prototype.map.call(container.children,function(el){' +
+      // a wishes slot the pager has hidden (data-zd-hidden) is not laid out
+      'return Array.prototype.filter.call(container.children,function(el){return !el.hasAttribute("data-zd-hidden");}).map(function(el){' +
       'var box={el:el,top:baseAttr(el,"data-zd-flow-base-top",function(){return parseFloat(el.style.top)||0;}),left:parseFloat(el.style.left)||0,width:parseFloat(el.style.width)||0};' +
       'if(el.hasAttribute("data-zd-text-node")){' +
       'box.height=parseFloat(el.getAttribute("data-zd-base-height"))||0;' +
@@ -1245,6 +1286,7 @@
       'if(stage)stage.style.height=cursor+"px";' +
       'if(wrap&&stage){var scale=Math.min(1,window.innerWidth/stage.offsetWidth);wrap.style.height=(cursor*scale)+"px";}' +
       '}' +
+      'window.zdReflow=run;' +
       'if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run);' +
       'window.addEventListener("load",run);' +
       'window.addEventListener("resize",run);' +
@@ -1425,6 +1467,35 @@
     };
     (guest.events || []).forEach(function (ev) { if (ev && ev.nama_acara) followUpCfg.events[ev.nama_acara] = { keterangan: ev.keterangan, venue: ev.venue }; });
 
+    // The wishes pager: swaps the next batch of wishes (window.zd2Wishes, all of them) into the slots the page drew,
+    // hides the slots a short last page does not need, and moves the pager and the section end up by their height;
+    // the text flow (window.zdReflow) then lays the section and everything after it out again.
+    var wishPagerScript = '(function(){' +
+      'var all=window.zd2Wishes,T=window.zd2T,PER=' + ZeDocCore.WISHES_PER_PAGE + ';' +
+      'var pager=document.querySelector("[data-zd2-wish-pager]");if(!all||!pager)return;' +
+      'var section=pager.closest("[data-zd-section-index]");if(!section)return;' +
+      'var pages=Math.ceil(all.length/PER),page=0;' +
+      'var prev=pager.querySelector("[data-zd2-wish-prev]"),next=pager.querySelector("[data-zd2-wish-next]"),label=pager.querySelector("[data-zd2-wish-label]");' +
+      // an element's authored top, remembered under the attribute the text flow starts from (same value it would record)
+      'function baseTop(el){var v=el.getAttribute("data-zd-flow-base-top");if(v===null){v=String(parseFloat(el.style.top)||0);el.setAttribute("data-zd-flow-base-top",v);}return parseFloat(v)||0;}' +
+      'function texts(i){var out=[],els=document.querySelectorAll("[data-zd2-wish-i]");for(var k=0;k<els.length;k++)if(els[k].getAttribute("data-zd2-wish-i")===String(i))out.push(els[k]);return out;}' +
+      // a slot is the wrapper around its texts: text -> its positioned box -> the repeat item
+      'var slots=[];for(var i=0;i<PER;i++){var t=texts(i)[0];slots.push(t?t.parentElement.parentElement:null);}' +
+      'if(!slots[0]||!slots[1])return;' +
+      'var stride=baseTop(slots[1])-baseTop(slots[0]),pagerTop=baseTop(pager),height=parseFloat(section.getAttribute("data-zd-base-height"))||0;' +
+      'function show(p){page=p;var start=p*PER,n=Math.min(PER,all.length-start);' +
+      'for(var i=0;i<PER;i++){var s=slots[i];if(!s)continue;' +
+      'if(i<n){texts(i).forEach(function(el){el.textContent=all[start+i][el.getAttribute("data-zd2-wish-key")];});s.removeAttribute("data-zd-hidden");s.style.display="";}' +
+      'else{s.setAttribute("data-zd-hidden","1");s.style.display="none";}}' +
+      'var gone=(PER-n)*stride;' +
+      'pager.setAttribute("data-zd-flow-base-top",String(pagerTop-gone));section.setAttribute("data-zd-base-height",(height-gone)+"px");' +
+      'label.textContent=T.pageOf.replace("{p}",p+1).replace("{n}",pages);' +
+      'prev.disabled=p===0;next.disabled=p===pages-1;' +
+      'if(window.zdReflow)window.zdReflow();}' +
+      'document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("[data-zd2-wish-prev],[data-zd2-wish-next]");' +
+      'if(!b||b.disabled)return;show(b.hasAttribute("data-zd2-wish-prev")?page-1:page+1);});' +
+      '})();';
+
     // The dewasa/anak counters of the RSVP cards (decorateNode's 'guest-count' role).
     // Same clamp rule as the .dc.html form: each field to its own cap, then the total
     // cap takes what is over off the field just edited. Choosing "Ya" starts from the
@@ -1509,6 +1580,7 @@
       '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       buildFontLinks(fontFamilies) +
       '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' +
+      (wishPagerAdded ? '[data-zd2-wish-pager] button:disabled{opacity:.4;cursor:default}' : '') +
       // a repeat visit opens locked: the toggle only shows the earlier answer, the summary replaces the steppers
       'body[data-zd2-locked] [data-zd2-attend]{pointer-events:none}body[data-zd2-locked] [data-zd2-counts-event]{display:flex!important}' +
       'body[data-zd2-locked] .zd2-cnt{display:none!important}body[data-zd2-locked] .zd2-sum{display:flex!important}' +
@@ -1531,6 +1603,7 @@
       countdownScript +
       '})();</script>' +
       '<script>' + textReflowScript + '</script>' +
+      (wishPagerAdded ? '<script>window.zd2Wishes=' + jsonForScript(wishPaging) + ';</script><script>' + wishPagerScript + '</script>' : '') +
       '<script>' + lightboxScript + '</script>' +
       '<script>' + handDrawnRsvpWishScript + '</script>' +
       (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
