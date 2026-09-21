@@ -364,6 +364,9 @@
     { name: 'Copy button', type: 'group', role: 'copy-button' },
     { name: 'Wish name input', type: 'group', role: 'wish-input', arg: 'wish-name' },
     { name: 'Wish message input', type: 'group', role: 'wish-input', arg: 'wish-message' },
+    // dewasa/anak counters inside an RSVP event card. Templates do not have to draw one:
+    // withGuestCounts adds it under the Yes/No buttons when a card has none
+    { name: 'Guest count', type: 'group', role: 'guest-count' },
     { name: 'Event buttons', type: 'group', role: 'event-buttons' },
     { name: 'Map button', type: '*', role: 'map-button' },
     { name: 'Calendar button', type: '*', role: 'calendar-button' },
@@ -1015,8 +1018,138 @@
     return lookup(SECTION_BY_ID, artboard.id || '') || lookup(SECTION_BY_NAME, String(artboard.name || '').trim().toLowerCase());
   }
 
+  // ---------------------------------------------------------------------
+  // Per-guest events. The one place that decides which events a guest sees and
+  // what each one asks of them - a port of the .dc.html engine's block in
+  // assets/engine.js, so both renderers agree.
+  //   guestInvitedEvents  only these nama_acara are shown (absent/empty = all)
+  //   guestEventQuota     { [nama_acara]: { mode, dewasa, anak, total, enforce } }
+  //   guestEventRsvp      { [nama_acara]: { dewasa, anak } } - a previous answer
+  //   guestId             absent = a demo/catalog/wizard preview, not a real link
+  // A cap (`rsvp*Max`) is only set when the quota is enforced (enforce !== false):
+  // a soft quota still shows its "jumlah undangan" note but never clamps, here or
+  // server-side. `unlimited` has no cap and no note, but still asks for the counts.
+  // ---------------------------------------------------------------------
+  function guestEvents(data) {
+    data = data || {};
+    var events = Array.isArray(data.events) ? data.events : null;
+    if (events && Array.isArray(data.guestInvitedEvents) && data.guestInvitedEvents.length) {
+      events = events.filter(function (ev) { return data.guestInvitedEvents.indexOf(ev.nama_acara) !== -1; });
+    }
+    var demo = !data.guestId;
+    var canRsvp = demo ? true : !!data.guestEventQuota;
+    if (!events || !canRsvp) return { events: events, canRsvp: canRsvp };
+
+    var quotas = data.guestEventQuota || {};
+    var answers = data.guestEventRsvp || {};
+    return {
+      canRsvp: canRsvp,
+      events: events.map(function (ev) {
+        var q = quotas[ev.nama_acara];
+        var prev = answers[ev.nama_acara];
+        var out = {
+          hasQuotaNote: false, quotaNote: '',
+          rsvpShowInputs: demo || !!q, rsvpMode: (q && q.mode) || 'category',
+          rsvpDewasaMax: null, rsvpAnakMax: null, rsvpTotalMax: null,
+          rsvpPrefillDewasa: (prev && prev.dewasa) || 0,
+          rsvpPrefillAnak: (prev && prev.anak) || 0,
+          // a stored 0/0 is a real "tidak hadir", so "has answered" is not "count > 0"
+          rsvpHasResponded: !!prev
+        };
+        var lead = 'Dengan tidak mengurangi rasa hormat, kami mengundang Anda untuk hadir bersama keluarga (jumlah undangan: ';
+        if (q && q.mode === 'total') {
+          if (q.enforce !== false) out.rsvpTotalMax = q.total || null;
+          if (q.total) { out.hasQuotaNote = true; out.quotaNote = lead + q.total + ' orang).'; }
+        } else if (q && q.mode !== 'unlimited') {
+          if (q.enforce !== false) {
+            out.rsvpDewasaMax = q.dewasa != null ? q.dewasa : null;
+            out.rsvpAnakMax = q.anak != null ? q.anak : null;
+          }
+          if (q.dewasa || q.anak) {
+            var parts = [];
+            if (q.dewasa) parts.push(q.dewasa + ' dewasa');
+            if (q.anak) parts.push(q.anak + ' anak');
+            out.hasQuotaNote = true;
+            out.quotaNote = lead + parts.join(' dan ') + ').';
+          }
+        }
+        out.rsvpUntracked = !out.rsvpShowInputs;
+        return Object.assign({}, ev, out);
+      })
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Guest counts. The catalog RSVP cards only draw the Ya/Tidak toggle, but a guest
+  // must also say how many adults/children are coming - the organizer plans catering
+  // from those numbers. Instead of redrawing every template, the guest page adds
+  // the counters to the card at render time: a 'Guest count' group (the engine fills
+  // it with real inputs) and a 'Guest count note' text (the per-event quotaNote) under
+  // the attendance buttons. The card, the repeat's pitch and everything below the
+  // repeat make room for it. A card that already carries a 'Guest count' group (drawn
+  // by the template or the designer) is left alone.
+  // ---------------------------------------------------------------------
+  var COUNT_GAP = 12, COUNT_ROW_H = 34, COUNT_NOTE_GAP = 4, COUNT_NOTE_H = 14;
+  var COUNT_EXTRA = COUNT_GAP + COUNT_ROW_H + COUNT_NOTE_GAP + COUNT_NOTE_H;
+
+  function attendGroupOf(repeat) {
+    return repeat.children.filter(function (child) {
+      return child.type === 'group' && child.children.some(function (kid) {
+        var role = guestRole(kid);
+        return !!role && role.role === 'attend-shape';
+      });
+    })[0] || null;
+  }
+
+  /**
+   * Adds the guest-count block to a section's top-level nodes.
+   * Returns { nodes, extra }: the (copied) nodes, and how much taller the section
+   * became at its baseline item count (the caller adds it to the section height).
+   * The nodes come back untouched, extra 0, when there is no RSVP events card.
+   */
+  function withGuestCounts(nodes) {
+    var repeat = nodes.filter(function (n) { return n.type === 'repeat' && n.listKey === 'events' && attendGroupOf(n); })[0];
+    var has = repeat && repeat.children.some(function (c) { var r = guestRole(c); return !!r && r.role === 'guest-count'; });
+    if (!repeat || has) return { nodes: nodes, extra: 0 };
+
+    var attend = attendGroupOf(repeat);
+    var left = attend.frame.x, width = attend.frame.w;
+    var rowY = attend.frame.y + attend.frame.h + COUNT_GAP;
+    var still = { rotate: 0, flipX: false, flipY: false };
+    var group = {
+      id: 'zd-guest-count', name: 'Guest count', type: 'group', opacity: 1, visible: true, locked: false,
+      frame: Object.assign({ x: left, y: rowY, w: width, h: COUNT_ROW_H }, still), children: []
+    };
+    var note = {
+      id: 'zd-guest-count-note', name: 'Guest count note', type: 'text', opacity: 1, visible: true, locked: false,
+      frame: Object.assign({ x: left, y: rowY + COUNT_ROW_H + COUNT_NOTE_GAP, w: width, h: COUNT_NOTE_H }, still),
+      text: '', binding: { key: 'quotaNote' },
+      style: { font: { kind: 'token', token: 'body' }, size: 11, weight: 400, lineHeight: 1.3, letterSpacing: 0, align: 'left', color: { kind: 'token', token: 'inkSoft' }, italic: false, underline: false, transform: 'none' }
+    };
+
+    // the card's background grows by the block; renamed so its stretch also follows
+    // a quota note that wraps to a second line (isStretchShape matches "...background")
+    var grown = false;
+    var children = repeat.children.map(function (c) {
+      if (grown || c.type !== 'shape' || c.frame.x !== 0 || c.frame.y !== 0 || c.frame.w < repeat.frame.w - 1) return c;
+      grown = true;
+      return Object.assign({}, c, { name: 'Card background', frame: Object.assign({}, c.frame, { h: c.frame.h + COUNT_EXTRA }) });
+    }).concat([group, note]);
+
+    var end = repeat.frame.y + repeat.frame.h;
+    var shift = COUNT_EXTRA * (repeat.verifiedCount != null ? repeat.verifiedCount : 1);
+    return {
+      extra: shift,
+      nodes: nodes.map(function (n) {
+        if (n === repeat) return Object.assign({}, n, { children: children, frame: Object.assign({}, n.frame, { h: n.frame.h + COUNT_EXTRA }) });
+        if (n.frame.y >= end - 1) return Object.assign({}, n, { frame: Object.assign({}, n.frame, { y: n.frame.y + shift }) });
+        return n;
+      })
+    };
+  }
+
   return {
-    SECTIONS: SECTIONS, sectionOf: sectionOf,
+    SECTIONS: SECTIONS, sectionOf: sectionOf, guestEvents: guestEvents, withGuestCounts: withGuestCounts,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,

@@ -19,9 +19,9 @@
  *     follow-up work for this pipeline, not built here.
  *   - The opening-overlay tap-to-open gate IS supported: an `envelope`-role
  *     artboard with nodes renders as a fixed full-viewport overlay on top of
- *     the invitation stage; tapping it anywhere fades it out. No
- *     `#rsvp`-deep-link/`skipOpeningOverlay` bypass like assets/engine.js
- *     has — ponytail: add one if a broadcast flow needs it.
+ *     the invitation stage; tapping it anywhere fades it out. A `#rsvp` in
+ *     the page address opens it and scrolls to the RSVP section, and
+ *     `skipOpeningOverlay` (data or opts) leaves it out, as in assets/engine.js.
  *   - Repeat nodes (events/gallery/quotes/loveStory/envelope/couple) DO loop
  *     over every real item (unlike ze-designer's own canvas preview, which
  *     only ever shows item 0 — see NodeContent.tsx's comment on why that's
@@ -193,6 +193,48 @@
     return (prev.dewasa || 0) + (prev.anak || 0) > 0;
   }
 
+  // What a fresh "Ya" starts from for one event: their earlier answer if they gave one,
+  // else one adult (an attendance of 0 people is a decline) - kept inside the caps.
+  function guestCountDefaults(ev) {
+    var answered = (ev.rsvpPrefillDewasa || 0) + (ev.rsvpPrefillAnak || 0) > 0;
+    if (answered) return { dewasa: ev.rsvpPrefillDewasa || 0, anak: ev.rsvpPrefillAnak || 0 };
+    var d = ev.rsvpDewasaMax != null ? Math.min(1, ev.rsvpDewasaMax) : 1;
+    var a = 0;
+    if (d === 0) a = ev.rsvpAnakMax != null ? Math.min(1, ev.rsvpAnakMax) : 1;
+    if (ev.rsvpTotalMax != null && d + a > ev.rsvpTotalMax) { d = Math.min(d, ev.rsvpTotalMax); a = Math.min(a, ev.rsvpTotalMax - d); }
+    return { dewasa: d, anak: a };
+  }
+
+  function guestCountAttrs(ev) {
+    var def = guestCountDefaults(ev);
+    var attrs = { 'data-zd2-counts-event': ev.nama_acara || '', 'data-zd2-def-dewasa': String(def.dewasa), 'data-zd2-def-anak': String(def.anak) };
+    // a cap that is not set has no attribute at all (an empty one would read as 0)
+    if (ev.rsvpDewasaMax != null) attrs['data-zd2-max-dewasa'] = String(ev.rsvpDewasaMax);
+    if (ev.rsvpAnakMax != null) attrs['data-zd2-max-anak'] = String(ev.rsvpAnakMax);
+    if (ev.rsvpTotalMax != null) attrs['data-zd2-max-total'] = String(ev.rsvpTotalMax);
+    return attrs;
+  }
+
+  // One "Dewasa  [-] 2 [+]" box, in the theme's own line/accent/ink so it matches
+  // whichever template it lands in. The label is Indonesian only for now, like the
+  // toasts below (ponytail: route through the language presets when those reach this page).
+  function guestCountHtml(field, label, ctx) {
+    var ev = ctx.repeatItem;
+    var def = guestCountDefaults(ev);
+    var attending = attendingDefaultFor(ctx, ev.nama_acara || '');
+    var palette = ctx.theme.palette;
+    var radius = px(Math.min(ctx.theme.radius || 0, 12));
+    var stepStyle = styleStr({ width: px(24), height: px(24), padding: 0, flex: 'none', border: '1px solid ' + palette.accent, borderRadius: radius, background: 'transparent', color: palette.accent, fontFamily: 'inherit', fontSize: px(15), lineHeight: 1, cursor: 'pointer' });
+    var step = function (delta, sign, word) {
+      return '<button type="button" data-zd2-step="' + delta + '" data-zd2-field="' + field + '" aria-label="' + word + ' ' + label.toLowerCase() + '" style="' + stepStyle + '">' + sign + '</button>';
+    };
+    return '<div style="' + styleStr({ flex: 1, minWidth: 0, height: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: px(4), padding: '0 8px', border: '1px solid ' + palette.line, borderRadius: radius, fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: palette.ink }) + '">' +
+      '<span>' + label + '</span>' +
+      '<span style="display:flex;align-items:center;gap:2px">' + step(-1, '&minus;', 'Kurangi') +
+      '<input class="zd2-num" type="number" min="0" inputmode="numeric" data-zd2-field="' + field + '" value="' + (attending ? def[field] : 0) + '" aria-label="' + label + '" style="' + styleStr({ width: px(30), border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', color: palette.ink, fontFamily: 'inherit', fontSize: px(13), padding: 0 }) + '">' +
+      step(1, '+', 'Tambah') + '</span></div>';
+  }
+
   // --- guest-only behaviour, layered on ZeDocCore's node views ---------------
   //
   // ZeDocCore.nodeView draws every node the same way the designer canvas does;
@@ -240,6 +282,7 @@
       attrs['data-zd2-color-on'] = colorOn;
       attrs['data-zd2-color-off'] = colorOff;
       attrs['data-zd2-selected'] = selected ? '1' : '0';
+      if (ctx.repeatItem.rsvpShowInputs === false) attrs['data-zd2-untracked'] = '1';
     }
     textView.attrs = attrs;
     textView.children = [text];
@@ -361,15 +404,17 @@
           width: '100%', height: '100%', boxSizing: 'border-box', borderRadius: px(node.radius),
           background: ctx.theme.palette.accent, borderWidth: px(node.stroke.width || 1), borderStyle: 'solid', borderColor: ctx.theme.palette.accent
         };
+        var attendAttrs = {
+          'data-zd2-attend': attendShapeRole,
+          'data-zd2-event': attendEvent,
+          'data-zd2-style-on': ZeDocCore.styleText(onStyle),
+          'data-zd2-style-off': ZeDocCore.styleText(offStyle),
+          'data-zd2-selected': attendSelected ? '1' : '0'
+        };
+        if (ctx.repeatItem.rsvpShowInputs === false) attendAttrs['data-zd2-untracked'] = '1';
         return {
           tag: 'div',
-          attrs: {
-            'data-zd2-attend': attendShapeRole,
-            'data-zd2-event': attendEvent,
-            'data-zd2-style-on': ZeDocCore.styleText(onStyle),
-            'data-zd2-style-off': ZeDocCore.styleText(offStyle),
-            'data-zd2-selected': attendSelected ? '1' : '0'
-          },
+          attrs: attendAttrs,
           style: Object.assign({}, wrapStyle, { cursor: 'pointer' }),
           children: [{ tag: 'div', style: attendSelected ? onStyle : offStyle }]
         };
@@ -423,6 +468,19 @@
             }];
             return;
           }
+        }
+
+        // "Guest count" (inside the RSVP events repeat, see ZeDocCore.withGuestCounts):
+        // dewasa/anak steppers for this event, wired in guestCountScript. Hidden while
+        // the guest is declining; absent for an event they have no quota on.
+        if (role === 'guest-count' && ctx.repeatItem) {
+          view.children = [];
+          if (ctx.repeatItem.rsvpShowInputs === false) return;
+          var countAttending = attendingDefaultFor(ctx, ctx.repeatItem.nama_acara || '');
+          view.attrs = guestCountAttrs(ctx.repeatItem);
+          view.style = Object.assign({}, wrapStyle, { display: countAttending ? 'flex' : 'none', gap: px(10), alignItems: 'center' });
+          view.children = [{ raw: guestCountHtml('dewasa', 'Dewasa', ctx) }, { raw: guestCountHtml('anak', 'Anak', ctx) }];
+          return;
         }
 
         // "Copy button" (inside the Envelope repeat, one per bank account) -
@@ -659,6 +717,13 @@
       data = Object.assign({}, data, { couple: [data.couple[1], data.couple[0]] });
     }
 
+    // Which events this guest sees, and what each asks of them (quota caps,
+    // previous answer). The filtered list replaces data.events before reflow, so
+    // a guest invited to fewer events gets a shorter events section. Same shallow
+    // copy reasoning as the couple swap above.
+    var guest = ZeDocCore.guestEvents(data);
+    data = Object.assign({}, data, { events: guest.events, canRsvp: guest.canRsvp });
+
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
     if (artboards.length === 0) artboards = doc.artboards.slice(0, 1);
@@ -700,11 +765,14 @@
     for (var s = 0; s < shown.length; s++) {
       var section = shown[s];
       var sectionCtx = ctxFor(section);
-      var sectionLaid = reflowNodes(unwrapBlock(section.nodes), data);
-      var sectionHeight = section.size.h + sectionLaid.extra;
+      // a guest who may RSVP also says how many are coming: add the counters to the RSVP cards
+      var counted = data.canRsvp ? ZeDocCore.withGuestCounts(unwrapBlock(section.nodes)) : { nodes: unwrapBlock(section.nodes), extra: 0 };
+      var sectionLaid = reflowNodes(counted.nodes, data);
+      var sectionHeight = section.size.h + counted.extra + sectionLaid.extra;
       var sectionBodyHtml = sectionLaid.items.map(function (entry, i) { return renderNode(entry.node, sectionCtx, entry.y, sectionLaid.bgHeightGrow[i]); }).join('');
       var sectionBgStyle = styleStr(resolveFill(section.background, sectionCtx));
-      bodyHtml += '<div data-zd-section-index="' + s + '" data-zd-base-height="' + px(sectionHeight) + '" style="' + styleStr({ position: 'absolute', top: px(cursorY), left: 0, width: px(section.size.w), height: px(sectionHeight) }) + sectionBgStyle + '">' + sectionBodyHtml + '</div>';
+      var sectionKey = ZeDocCore.sectionOf(section);
+      bodyHtml += '<div' + (sectionKey ? ' data-zd-section="' + sectionKey + '"' : '') + ' data-zd-section-index="' + s + '" data-zd-base-height="' + px(sectionHeight) + '" style="' + styleStr({ position: 'absolute', top: px(cursorY), left: 0, width: px(section.size.w), height: px(sectionHeight) }) + sectionBgStyle + '">' + sectionBodyHtml + '</div>';
       cursorY += sectionHeight;
     }
     var totalHeight = cursorY;
@@ -716,7 +784,10 @@
     // are both '', output is byte-identical to before this existed.
     var envelope = doc.artboards.filter(function (a) { return a.role === 'envelope'; })[0];
     var gateHtml = '', gateScript = '';
-    if (envelope && envelope.nodes.length > 0 && switches['opening-overlay'] !== false) {
+    // `skipOpeningOverlay` (data or opts) starts the invitation already opened - the
+    // wizard/catalog preview - exactly like switching the gate off.
+    var skipGate = !!(data.skipOpeningOverlay || opts.skipOpeningOverlay);
+    if (envelope && envelope.nodes.length > 0 && switches['opening-overlay'] !== false && !skipGate) {
       var envelopeCtx = ctxFor(envelope);
       var gateLaid = reflowNodes(unwrapBlock(envelope.nodes), data);
       var gateBodyHtml = gateLaid.items.map(function (entry, i) { return renderNode(entry.node, envelopeCtx, entry.y, gateLaid.bgHeightGrow[i]); }).join('');
@@ -900,12 +971,18 @@
       '});return;}' +
       'if(e.target.closest&&e.target.closest("#zd2-rsvp-submit")){' +
       'var slug=document.body.getAttribute("data-zd2-slug")||"",guestId=document.body.getAttribute("data-zd2-guest-id")||"";' +
-      'if(!slug||!guestId){zd2Toast("Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.");return;}' +
-      'var payload={},seen={};' +
+      'if(!slug||!guestId||document.body.getAttribute("data-zd2-can-rsvp")==="0"){zd2Toast("Buka undangan lewat tautan pribadi Anda untuk mengonfirmasi kehadiran.");return;}' +
+      'var payload={},seen={},noOne=false;' +
       'Array.prototype.forEach.call(document.querySelectorAll("[data-zd2-attend][data-zd2-selected=\\"1\\"]"),function(el){' +
       'var ev=el.getAttribute("data-zd2-event");if(!ev||seen[ev])return;seen[ev]=1;' +
+      // an event this guest has no quota on is not theirs to answer (same as the .dc.html form)
+      'if(el.hasAttribute("data-zd2-untracked"))return;' +
       'var attending=el.getAttribute("data-zd2-attend")==="yes";' +
-      'payload[ev]=attending?{dewasa:1,anak:0}:{dewasa:0,anak:0};});' +
+      // "Ya" with the counters' numbers; 0 adults + 0 children would be stored as a decline
+      'var counts=attending&&window.zd2Counts?window.zd2Counts(ev):null;' +
+      'if(counts&&counts.dewasa+counts.anak===0)noOne=true;' +
+      'payload[ev]=attending?(counts||{dewasa:1,anak:0}):{dewasa:0,anak:0};});' +
+      'if(noOne){zd2Toast("Isi jumlah tamu yang akan hadir.");return;}' +
       'zd2Toast("Mengirim...");' +
       'fetch("/api/invitations/"+encodeURIComponent(slug)+"/guests/"+encodeURIComponent(guestId)+"/rsvp",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_rsvp:payload})})' +
       '.then(function(r){zd2Toast(r.ok?"Terima kasih, konfirmasi Anda telah kami catat.":"Gagal mengirim konfirmasi, coba lagi.");})' +
@@ -971,6 +1048,52 @@
         '})();';
     }
 
+    // The dewasa/anak counters of the RSVP cards (decorateNode's 'guest-count' role).
+    // Same clamp rule as the .dc.html form: each field to its own cap, then the total
+    // cap takes what is over off the field just edited. Choosing "Ya" starts from the
+    // event's defaults when both are 0, "Tidak" zeroes them and hides the box.
+    // window.zd2Counts(event) hands the numbers to the RSVP submit above.
+    var guestCountScript = '(function(){' +
+      'function all(){return Array.prototype.slice.call(document.querySelectorAll("[data-zd2-counts-event]"));}' +
+      'function wrapFor(ev){return all().filter(function(w){return w.getAttribute("data-zd2-counts-event")===ev;})[0]||null;}' +
+      'function box(w,f){return w.querySelector("input[data-zd2-field="+f+"]");}' +
+      'function val(w,f){return Math.max(0,parseInt(box(w,f).value,10)||0);}' +
+      'function cap(w,k){var v=w.getAttribute("data-zd2-max-"+k);return v===null?null:parseInt(v,10);}' +
+      'function put(w,d,a){box(w,"dewasa").value=d;box(w,"anak").value=a;}' +
+      'function set(w,f,v){' +
+      'var n={dewasa:val(w,"dewasa"),anak:val(w,"anak")};n[f]=Math.max(0,v||0);' +
+      'var md=cap(w,"dewasa"),ma=cap(w,"anak"),mt=cap(w,"total");' +
+      'if(md!==null)n.dewasa=Math.min(n.dewasa,md);if(ma!==null)n.anak=Math.min(n.anak,ma);' +
+      'if(mt!==null&&n.dewasa+n.anak>mt)n[f]=Math.max(0,n[f]-(n.dewasa+n.anak-mt));' +
+      'put(w,n.dewasa,n.anak);}' +
+      'window.zd2Counts=function(ev){var w=wrapFor(ev);return w?{dewasa:val(w,"dewasa"),anak:val(w,"anak")}:null;};' +
+      'document.addEventListener("click",function(e){' +
+      'var st=e.target.closest&&e.target.closest("[data-zd2-step]");' +
+      'if(st){var w=st.closest("[data-zd2-counts-event]"),f=st.getAttribute("data-zd2-field");if(w)set(w,f,val(w,f)+parseInt(st.getAttribute("data-zd2-step"),10));return;}' +
+      'var at=e.target.closest&&e.target.closest("[data-zd2-attend]");' +
+      'if(!at)return;var cw=wrapFor(at.getAttribute("data-zd2-event"));if(!cw)return;' +
+      'if(at.getAttribute("data-zd2-attend")==="yes"){cw.style.display="flex";' +
+      'if(val(cw,"dewasa")+val(cw,"anak")===0)put(cw,cw.getAttribute("data-zd2-def-dewasa"),cw.getAttribute("data-zd2-def-anak"));}' +
+      'else{cw.style.display="none";put(cw,0,0);}' +
+      '});' +
+      // typed numbers settle on change, not per keystroke (clearing the box to retype must not snap to 0)
+      'document.addEventListener("change",function(e){var i=e.target;' +
+      'if(!(i.matches&&i.matches("input[data-zd2-field]")))return;' +
+      'var w=i.closest("[data-zd2-counts-event]");if(w)set(w,i.getAttribute("data-zd2-field"),parseInt(i.value,10));});' +
+      '})();';
+
+    // The WhatsApp "Konfirmasi Kehadiran" link ends in #rsvp (worker.js's
+    // handleWaShortLink): open the gate for the guest and scroll to the RSVP
+    // section instead of making them tap through and scroll. The layout is still
+    // settling right after load (fonts, the text flow above), which can outrun a
+    // single smooth scroll, so it nudges back a few times - same as the .dc.html one.
+    // No RSVP section (switched off, or a canvas the couple made) = just opens the gate.
+    var rsvpLinkScript = '(function(){if(location.hash!=="#rsvp")return;' +
+      'var gate=document.getElementById("zd-gate");if(gate)gate.click();' +
+      'var n=0;function go(){var el=document.querySelector("[data-zd-section=rsvp]");' +
+      'if(el)el.scrollIntoView({behavior:"smooth",block:"start"});if(++n<5)setTimeout(go,400);}' +
+      'setTimeout(go,400);})();';
+
     // Node animations (ZeDocCore.motionStyle). The keyframes are only emitted
     // for presets the doc uses. While the gate is up the stage's animations are
     // held (body[data-zd-gated]); zdMotionStart releases them - on load with no
@@ -999,8 +1122,8 @@
       '<link rel="preconnect" href="https://fonts.googleapis.com">' +
       '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
       buildFontLinks(fontFamilies) +
-      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}' + motionCss + musicCss + '</style>' +
-      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '">' +
+      '<style>*{box-sizing:border-box}body{margin:0;background:#e9e7d9}.zd2-num{-moz-appearance:textfield}.zd2-num::-webkit-inner-spin-button,.zd2-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' + motionCss + musicCss + '</style>' +
+      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '"' + (data.canRsvp ? '' : ' data-zd2-can-rsvp="0"') + '>' +
       '<div id="zd-wrap" style="position:relative;width:100%;overflow:hidden">' +
       '<div id="zd-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(stageWidth), height: px(totalHeight) }) + '">' +
       bodyHtml +
@@ -1021,6 +1144,8 @@
       '<script>' + handDrawnRsvpWishScript + '</script>' +
       (motionUsed.any ? '<script>' + motionScript + '</script>' : '') +
       (musicUrl ? '<script>' + musicScript + '</script>' : '') +
+      (guest.canRsvp ? '<script>' + guestCountScript + '</script>' : '') +
+      '<script>' + rsvpLinkScript + '</script>' +
       '</body></html>';
   }
 

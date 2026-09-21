@@ -330,4 +330,133 @@ assert.ok(html.includes('id="zd-gate"') && html.includes('data-zd-gated="1"'))
 html = engine.render(docOf([box('r1', { animations: [anim()] })], [box('g1')]), { sections: { 'opening-overlay': false } })
 assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
 
+// --- per-guest events ----------------------------------------------------------------
+{
+  const evs = [{ nama_acara: 'Akad' }, { nama_acara: 'Resepsi' }, { nama_acara: 'Gala' }]
+  const names = (r) => r.events.map((e) => e.nama_acara)
+  // a preview (no guestId): everything shown, RSVP on, counts always asked, no caps
+  let r = core.guestEvents({ events: evs })
+  assert.deepStrictEqual(names(r), ['Akad', 'Resepsi', 'Gala'])
+  assert.strictEqual(r.canRsvp, true)
+  assert.ok(r.events.every((e) => e.rsvpShowInputs && e.rsvpDewasaMax === null && !e.hasQuotaNote && !e.rsvpHasResponded))
+  // invited-events filter; empty list = no restriction; the input list is not mutated
+  assert.deepStrictEqual(names(core.guestEvents({ events: evs, guestInvitedEvents: ['Gala'] })), ['Gala'])
+  assert.strictEqual(core.guestEvents({ events: evs, guestInvitedEvents: [] }).events.length, 3)
+  assert.strictEqual(evs[0].rsvpShowInputs, undefined)
+  // a real guest without quota data cannot RSVP (and the filter still applies)
+  r = core.guestEvents({ events: evs, guestId: 'g1', guestInvitedEvents: ['Akad'] })
+  assert.strictEqual(r.canRsvp, false)
+  assert.deepStrictEqual(r.events, [{ nama_acara: 'Akad' }])
+  // category quota, enforced: caps + note; soft (enforce:false): note only
+  const quota = { Akad: { mode: 'category', dewasa: 2, anak: 1 }, Resepsi: { mode: 'category', dewasa: 2, anak: 0, enforce: false }, Gala: { mode: 'total', total: 4 } }
+  r = core.guestEvents({ events: evs, guestId: 'g1', guestEventQuota: quota })
+  assert.strictEqual(r.canRsvp, true)
+  assert.deepStrictEqual([r.events[0].rsvpDewasaMax, r.events[0].rsvpAnakMax, r.events[0].rsvpTotalMax], [2, 1, null])
+  assert.ok(r.events[0].quotaNote.endsWith('(jumlah undangan: 2 dewasa dan 1 anak).'))
+  assert.deepStrictEqual([r.events[1].rsvpDewasaMax, r.events[1].hasQuotaNote], [null, true])
+  assert.deepStrictEqual([r.events[2].rsvpTotalMax, r.events[2].rsvpMode], [4, 'total'])
+  assert.ok(r.events[2].quotaNote.endsWith('(jumlah undangan: 4 orang).'))
+  // unlimited (or no quota for that event): counts still asked only when a quota exists, no cap, no note
+  r = core.guestEvents({ events: evs, guestId: 'g1', guestEventQuota: { Akad: { mode: 'unlimited' } } })
+  assert.deepStrictEqual([r.events[0].rsvpShowInputs, r.events[0].rsvpDewasaMax, r.events[0].hasQuotaNote], [true, null, false])
+  assert.deepStrictEqual([r.events[1].rsvpShowInputs, r.events[1].rsvpUntracked], [false, true])
+  // a previous answer prefills; a stored 0/0 still counts as answered
+  r = core.guestEvents({ events: evs, guestId: 'g1', guestEventQuota: quota, guestEventRsvp: { Akad: { dewasa: 2, anak: 1 }, Resepsi: { dewasa: 0, anak: 0 } } })
+  assert.deepStrictEqual([r.events[0].rsvpPrefillDewasa, r.events[0].rsvpPrefillAnak, r.events[0].rsvpHasResponded], [2, 1, true])
+  assert.deepStrictEqual([r.events[1].rsvpPrefillDewasa, r.events[1].rsvpHasResponded], [0, true])
+  assert.strictEqual(r.events[2].rsvpHasResponded, false)
+  // no events list at all is passed through, not invented
+  assert.strictEqual(core.guestEvents({}).events, null)
+  // the guest page uses it: a guest invited to one event gets only that event on the page
+  const evDoc = docOf([{ ...rep, listKey: 'events', opacity: 1, children: [T('q', 'Q', { binding: { key: 'nama_acara' } })] }])
+  const page = engine.render(evDoc, { events: evs, guestId: 'g1', guestEventQuota: {}, guestInvitedEvents: ['Gala'] })
+  assert.ok(page.includes('Gala') && !page.includes('Akad') && !page.includes('Resepsi'))
+  assert.ok(!page.includes(' data-zd2-can-rsvp="0"'))
+  // RSVP is refused (body flag) for a real guest with no quota data, never for a preview
+  assert.ok(engine.render(evDoc, { events: evs, guestId: 'g1' }).includes(' data-zd2-can-rsvp="0"'))
+  assert.ok(!engine.render(evDoc, { events: evs }).includes(' data-zd2-can-rsvp="0"'))
+}
+
+// --- #rsvp deep link + skipOpeningOverlay ---------------------------------------------------
+{
+  const vm = require('node:vm')
+  const doc = docOf([], [box('g1')])
+  doc.artboards.splice(0, 1, part('cover', 100), part('rsvp', 100))
+  let page = engine.render(doc, {})
+  assert.ok(page.includes(' data-zd-section="rsvp"') && page.includes(' data-zd-section="cover"')) // sections say which they are
+  assert.ok(page.includes('id="zd-gate"'))
+  // skipOpeningOverlay (data or opts) = the gate is not there at all, and nothing is held behind it
+  for (const html of [engine.render(doc, { skipOpeningOverlay: true }), engine.render(doc, {}, { skipOpeningOverlay: true })]) assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated'))
+  // run the emitted deep-link script against a stub page: it taps the gate and scrolls to the RSVP section, and only for #rsvp
+  const run = (hash, hasRsvp) => {
+    const calls = { click: 0, scroll: 0 }
+    const timers = []
+    const stubEl = { click: () => calls.click++, scrollIntoView: () => calls.scroll++ }
+    const document = { getElementById: (id) => (id === 'zd-gate' ? stubEl : null), querySelector: (sel) => (hasRsvp && sel === '[data-zd-section=rsvp]' ? stubEl : null) }
+    const src = page.match(/<script>(\(function\(\)\{if\(location\.hash!=="#rsvp"\)return;.*?)<\/script>/)[1]
+    vm.runInNewContext(src, { location: { hash }, document, setTimeout: (fn) => timers.push(fn) })
+    for (let i = 0; i < 10 && timers.length; i++) timers.shift()() // the retries re-arm themselves, 5 in all
+    return calls
+  }
+  assert.deepStrictEqual(run('#rsvp', true), { click: 1, scroll: 5 })
+  assert.deepStrictEqual(run('#rsvp', false), { click: 1, scroll: 0 }) // no RSVP section: still opens the gate
+  assert.deepStrictEqual(run('', true), { click: 0, scroll: 0 })
+  assert.deepStrictEqual(run('#wishes', true), { click: 0, scroll: 0 })
+}
+
+// --- guest counts (dewasa/anak) in the RSVP cards ---------------------------------------------
+{
+  const shape = (id, name, x, y, w, h) => ({ ...box(id, { name }), frame: { x, y, w, h, rotate: 0, flipX: false, flipY: false } })
+  const attend = { id: 'ab', name: 'Attendance buttons', type: 'group', frame: frame(16, 98, 334, 34), opacity: 1, visible: true, locked: false, children: [shape('y', 'Yes button', 0, 0, 163, 34), shape('n', 'No button', 171, 0, 163, 34)] }
+  const card = (over) => ({
+    id: 'r', name: 'RSVP event cards', type: 'repeat', listKey: 'events', visible: true, opacity: 1, frame: frame(32, 106, 366, 158),
+    children: [shape('bg', 'RSVP card bg', 0, 0, 366, 148), T('nm', 'Event name', { binding: { key: 'nama_acara' } }), attend], ...over,
+  })
+  const below = shape('sub', 'Submit', 32, 276, 366, 44)
+  const nodes = [T('h', 'Head'), card(), below]
+  const before = JSON.stringify(nodes)
+  let r = core.withGuestCounts(nodes)
+  const rep2 = r.nodes[1]
+  assert.strictEqual(r.extra, 64)
+  assert.strictEqual(JSON.stringify(nodes), before) // the caller's nodes are not touched
+  assert.strictEqual(rep2.frame.h, 158 + 64) // one item's pitch grows
+  assert.deepStrictEqual([rep2.children[0].name, rep2.children[0].frame.h], ['Card background', 148 + 64]) // and its background, renamed so it stretches
+  assert.ok(core.isStretchShape(rep2.children[0]))
+  const [group, note] = rep2.children.slice(-2)
+  assert.deepStrictEqual([core.guestRole(group).role, group.frame.y, group.frame.h, group.frame.x, group.frame.w], ['guest-count', 98 + 34 + 12, 34, 16, 334]) // under the buttons, same width
+  assert.deepStrictEqual([note.binding.key, note.frame.y], ['quotaNote', 144 + 34 + 4])
+  assert.strictEqual(r.nodes[2].frame.y, 276 + 64) // whatever sat below moves down
+  assert.strictEqual(r.nodes[0], nodes[0]) // and what is above is the same object
+  // a card that already has its own counters, a baseline of 2 cards, a section with no RSVP cards
+  assert.strictEqual(core.withGuestCounts(r.nodes).extra, 0)
+  assert.strictEqual(core.withGuestCounts([card({ verifiedCount: 2 }), below]).extra, 128)
+  assert.strictEqual(core.withGuestCounts([card({ verifiedCount: 2 }), below]).nodes[1].frame.y, 276 + 128)
+  assert.deepStrictEqual(core.withGuestCounts([T('h', 'Head'), card({ listKey: 'quotes' })]), { nodes: [T('h', 'Head'), card({ listKey: 'quotes' })], extra: 0 })
+
+  // on the guest page: taller section, counters per event, defaults and caps as data attributes
+  const rsvpDoc = docOf([])
+  rsvpDoc.artboards = [{ ...part('rsvp', 420), nodes: [T('h', 'Head'), card(), below] }]
+  const evs2 = [{ nama_acara: 'Akad' }, { nama_acara: 'Resepsi' }]
+  const baseH = (h) => +h.match(/data-zd-base-height="(\d+)px"/)[1]
+  const withCounts = engine.render(rsvpDoc, { events: evs2, guestId: 'g1', guestEventQuota: {} })
+  const without = engine.render(rsvpDoc, { events: evs2, guestId: 'g1' }) // no quota data: canRsvp false
+  assert.strictEqual(baseH(withCounts) - baseH(without), 64 + 64) // 2 cards, but only the baseline one is pre-grown: 64 + the 2nd card's pitch
+  assert.ok(!without.includes('data-zd2-counts-event'))
+  const tracked = engine.render(rsvpDoc, { events: evs2, guestId: 'g1', guestEventQuota: { Akad: { mode: 'category', dewasa: 2, anak: 1 } }, guestEventRsvp: {} })
+  assert.strictEqual([...tracked.matchAll(/data-zd2-counts-event="/g)].length, 1) // Resepsi: no quota, no counters
+  assert.ok(tracked.includes('data-zd2-counts-event="Akad" data-zd2-def-dewasa="1" data-zd2-def-anak="0" data-zd2-max-dewasa="2" data-zd2-max-anak="1"'))
+  assert.ok(!tracked.includes('data-zd2-max-total') && !/data-zd2-(max|def|counts)-[a-z-]*=""/.test(tracked)) // no cap, no attribute (an empty one would read as 0)
+  assert.strictEqual([...tracked.matchAll(/data-zd2-untracked="1"/g)].length, 2) // Resepsi's Yes button (its label is not in this test doc)
+  // an earlier answer prefills; a decline hides the box and starts it at 0
+  let answered = engine.render(rsvpDoc, { events: [evs2[0]], guestId: 'g1', guestEventQuota: { Akad: { mode: 'unlimited' } }, guestEventRsvp: { Akad: { dewasa: 3, anak: 2 } } })
+  assert.ok(answered.includes('data-zd2-def-dewasa="3" data-zd2-def-anak="2"') && answered.includes('value="3"') && answered.includes('value="2"'))
+  answered = engine.render(rsvpDoc, { events: [evs2[0]], guestId: 'g1', guestEventQuota: { Akad: { mode: 'unlimited' } }, guestEventRsvp: { Akad: { dewasa: 0, anak: 0 } } })
+  assert.ok(answered.includes('display:none') && answered.includes('data-zd2-def-dewasa="1"'))
+  // a total cap of 1 (or dewasa capped at 0) keeps the default inside the caps
+  assert.ok(engine.render(rsvpDoc, { events: [evs2[0]], guestId: 'g1', guestEventQuota: { Akad: { mode: 'category', dewasa: 0, anak: 2 } } }).includes('data-zd2-def-dewasa="0" data-zd2-def-anak="1"'))
+  // the client script and the submit that reads it ship with the page
+  assert.ok(tracked.includes('window.zd2Counts=') && tracked.includes('window.zd2Counts(ev)') && tracked.includes('Isi jumlah tamu yang akan hadir'))
+  assert.ok(!without.includes('window.zd2Counts='))
+}
+
 console.log('zedoc-core: ok')

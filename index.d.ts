@@ -235,6 +235,26 @@ declare const core: {
   motionStyle(node: { animations?: MotionAnimation[]; animationPlayMode?: 'parallel' | 'sequence' }): { style: Record<string, string>; presets: string[]; reveal: boolean } | null
   /** `@keyframes` text per preset, named `zd-motion-<preset>`. */
   MOTION_KEYFRAMES: Record<string, string>
+  /**
+   * The events one guest sees and what each asks of them, shared by both renderers: filters by
+   * `guestInvitedEvents`, then (when the guest may RSVP) adds `rsvp*` caps/prefill and a
+   * `quotaNote` per event. `canRsvp` is true for a preview (no `guestId`) and otherwise needs
+   * `guestEventQuota`. Caps are only set for an enforced quota.
+   */
+  guestEvents(data: {
+    events?: Record<string, unknown>[]
+    guestId?: string
+    guestInvitedEvents?: string[]
+    guestEventQuota?: Record<string, { mode?: 'category' | 'total' | 'unlimited'; dewasa?: number | null; anak?: number | null; total?: number | null; enforce?: boolean }>
+    guestEventRsvp?: Record<string, { dewasa?: number; anak?: number }>
+  }): { events: Record<string, unknown>[] | null; canRsvp: boolean }
+  /**
+   * Adds the dewasa/anak counters to a section's RSVP event cards (a 'Guest count' group plus a
+   * 'Guest count note' text under the Yes/No buttons), growing the card and moving what is below.
+   * Returns copies plus how much taller the section got at its baseline item count; nodes come back
+   * unchanged (extra 0) when there is no such card or it already has a 'Guest count' group.
+   */
+  withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }
 
