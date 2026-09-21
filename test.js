@@ -691,4 +691,98 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(!unsafePage.includes('javascript:') && unsafePage.includes('Konfirmasi WA')) // the button's own drawing is still there
 }
 
+// --- markup from a document is never injected as is --------------------------------------------------
+{
+  const clean = core.sanitizeSvg
+  // what the catalog draws comes out exactly as written (the ten elements, url(#id) fills, a transform style)
+  const drawing = '<svg width="92" height="320" viewBox="0 0 120 320" opacity="0.9"><defs><pattern id="kw" patternUnits="userSpaceOnUse" width="8" height="8"><circle cx="4" cy="4" r="1" fill="#14655F"/></pattern></defs><g transform="translate(120,0) scale(-1,1)" style="transform:scaleY(-1)"><path d="M120 320V10H96v24Z" fill="url(#kw)" stroke="#14655F" stroke-width="1" stroke-linecap="round"/><rect x="1" y="2" width="3" height="4" rx="1"/><ellipse cx="1" cy="2" rx="3" ry="4"/><line x1="0" y1="0" x2="5" y2="5"/><polygon points="0,0 4,4 0,4"/></g></svg>'
+  assert.strictEqual(clean(drawing), drawing)
+  assert.strictEqual(clean('<svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1 1"><path d="M0 0"/></svg>'), '<svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1 1"><path d="M0 0"/></svg>')
+  assert.strictEqual(clean("<svg><g fill='#fff'><path d='M1 2'/></g></svg>"), '<svg><g fill="#fff"><path d="M1 2"/></g></svg>') // quotes normalised
+  assert.strictEqual(clean('<svg><text x="1">A &amp; B <tspan>c</tspan></text></svg>'), '<svg><text x="1">A &amp; B <tspan>c</tspan></text></svg>') // text and entities kept where text belongs
+  assert.strictEqual(clean(''), '')
+  assert.strictEqual(clean(null), '')
+  assert.strictEqual(clean(undefined), '')
+
+  // the attacks: each comes out without the dangerous part and with the drawing around it intact
+  const cases = [
+    ['<svg onload="alert(1)"><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><script>alert(1)</script><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><ScRiPt>alert(1)</sCrIpT><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><script>if(a<b){x="</svg>"}</script><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'], // a < inside the script is not a tag
+    ['<svg><path d="M0 0" onclick=alert(1) onmouseover=\'x\' ONERROR="y"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><a href="javascript:alert(1)"><path d="M0 0"/></a></svg>', '<svg></svg>'],
+    ['<svg><use href="javascript:alert(1)"/><use xlink:href="http://evil.example/x.svg#a"/><use href="#ok"/></svg>', '<svg><use/><use/><use href="#ok"/></svg>'],
+    ['<svg><use href="jav&#x61;script:alert(1)"/></svg>', '<svg><use/></svg>'], // an entity cannot smuggle the scheme
+    ['<svg><foreignObject><body onload=alert(1)></body></foreignObject><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><iframe src="javascript:alert(1)"></iframe><object data="x"></object><embed src="x"><path d="M0 0"/></svg>', '<svg></svg>'], // <embed> never closes, so the rest of the line is its "content"
+    ['<svg><image href="http://evil.example/p.png"/><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><animate attributeName="href" to="javascript:alert(1)"/><set attributeName="onload" to="alert(1)"/><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><style>@import url(http://evil.example/a.css);</style><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><path d="M0 0" fill="url(http://evil.example/a.svg#x)"/><path d="M1 1" fill="url( \'https://evil.example\')"/></svg>', '<svg><path d="M0 0"/><path d="M1 1"/></svg>'],
+    ['<svg><path style="fill:red;background:url(javascript:alert(1))" d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><path style="width:expression(alert(1))" d="M0 0"/><path style="fill:&#x72;ed" d="M1 1"/><path style="fill:\\72 ed" d="M2 2"/></svg>', '<svg><path d="M0 0"/><path d="M1 1"/><path d="M2 2"/></svg>'],
+    ['<svg><path d="M0 0"/><!--><script>alert(1)</script>--><path d="M1 1"/></svg>', '<svg><path d="M0 0"/><path d="M1 1"/></svg>'],
+    ['<svg><![CDATA[<script>alert(1)</script>]]><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'],
+    ['<svg><text><![CDATA[<b onclick=x>hi</b>]]></text></svg>', '<svg><text>&lt;b onclick=x&gt;hi&lt;/b&gt;</text></svg>'], // CDATA text is data, escaped
+    ['<svg><path d="a>b" onload=x d2="c"/></svg>', '<svg><path d="a&gt;b" d2="c"/></svg>'], // a > inside a value does not end the tag
+    ['</svg><script>alert(1)</script><svg><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'], // closing a tag we never opened
+    ['<svg><path d="M0 0"', '<svg></svg>'], // an unterminated tag: nothing after it is trusted, what was open is closed
+    ['<svg><path d="M0 0" fill="red', '<svg></svg>'],
+    ['<svg><g><path d="M0 0"></svg>', '<svg><g><path d="M0 0"></path></g></svg>'], // unclosed tags are closed
+    ['<svg><path d="M0 0" xmlns="http://evil.example/ns" xmlns:xlink="http://www.w3.org/1999/xlink"/></svg>', '<svg><path d="M0 0" xmlns:xlink="http://www.w3.org/1999/xlink"/></svg>'],
+    ['plain text <b>bold</b><svg><path d="M0 0"/></svg>', '<svg><path d="M0 0"/></svg>'], // text and non-drawing tags outside are dropped
+    ['<svg><path d=\'"><script>alert(1)</script>\'/></svg>', '<svg><path d="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"/></svg>'],
+  ]
+  cases.forEach(([input, expected], i) => assert.strictEqual(clean(input), expected, 'case ' + i + ': ' + input))
+
+  // property: whatever it is fed, the output only holds allowed tags, quoted attributes, no handler / script scheme
+  const allowed = ['svg', 'g', 'defs', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'text', 'tspan', 'title', 'desc', 'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'symbol', 'marker', 'use', 'filter', 'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'feflood', 'femerge', 'femergenode', 'femorphology', 'fedropshadow']
+  const pieces = ['<svg>', '</svg>', '<g>', '</g>', '<path d="M0 0"/>', '<script>', '</script>', '<style>', '</style>', '<a href="javascript:x">', '</a>', '<img src=x onerror=alert(1)>', 'onload=alert(1)', ' onclick="x" ', '<', '>', '"', "'", '=', '/', '<!--', '-->', '<![CDATA[', ']]>', '<use href="#a"/>', '<use href="data:image/svg+xml,x"/>', '<foreignObject>', '</foreignObject>', '&#x6a;avascript:', 'javascript:', '<text>', '</text>', 'hello', '\n', ' ', '<svg onload=', '<path d=', 'fill="url(http://x)"', '<ANIMATE ', '<iframe>', '<math>', '<p>', '\\', String.fromCharCode(0)]
+  let seed = 12345
+  const rand = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n }
+  for (let round = 0; round < 3000; round++) {
+    let input = ''
+    for (let k = rand(14) + 1; k > 0; k--) input += pieces[rand(pieces.length)]
+    const out = clean(input)
+    const tags = [...out.matchAll(/<\/?([A-Za-z0-9]+)/g)].map((m) => m[1].toLowerCase())
+    assert.ok(tags.every((t) => allowed.includes(t)), 'tag in: ' + JSON.stringify(input) + ' -> ' + JSON.stringify(out))
+    assert.ok(!/<(?![A-Za-z\/])/.test(out), 'stray < in: ' + JSON.stringify(out))
+    assert.ok(!/\son[a-z]+\s*=/i.test(out) && !/javascript\s*:/i.test(out) && !/<\s*(script|style|a|iframe|image|foreignobject)/i.test(out), 'unsafe in: ' + JSON.stringify(input) + ' -> ' + JSON.stringify(out))
+    // every attribute value is quoted and holds no quote or angle bracket
+    for (const tag of out.matchAll(/<[A-Za-z][^>]*>/g)) assert.ok(/^<[A-Za-z0-9]+(\s+[A-Za-z_:][\w:.\-]*="[^"<>]*")*\s*\/?>$/.test(tag[0]), 'tag shape: ' + tag[0] + ' from ' + JSON.stringify(input))
+    // balanced: every opened element is closed
+    const depth = [...out.matchAll(/<(\/?)([A-Za-z0-9]+)[^>]*?(\/?)>/g)].reduce((d, m) => (m[3] ? d : d + (m[1] ? -1 : 1)), 0)
+    assert.strictEqual(depth, 0, 'unbalanced: ' + out)
+  }
+
+  // the guest page: an svg node cannot run anything, and a style value cannot break out of its attribute
+  const svgNode = (markup) => ({ id: 's', name: 's', type: 'svg', frame: { x: 0, y: 0, w: 50, h: 50, rotate: 0, flipX: false, flipY: false }, opacity: 1, visible: true, locked: false, markup })
+  const evilPage = engine.render(docOf([svgNode('<svg onload="window.p=1"><script>window.p=2</script><path d="M0 0" fill="#123"/></svg>'), T('t', 'T')]), {})
+  assert.ok(evilPage.includes('<svg><path d="M0 0" fill="#123"/></svg>') && !evilPage.includes('window.p=') && !evilPage.includes('onload='))
+  const quote = '#fff" onmouseover="window.p=3" x="'
+  // an injected ATTRIBUTE, not the words: cut every quoted value out of every tag, then look for the name
+  const hasInjectedAttr = (html) => [...html.matchAll(/<[A-Za-z][^>]*>/g)].some((tag) => /\sonmouseover\s*=/i.test(tag[0].replace(/"[^"]*"/g, '""')))
+  assert.ok(hasInjectedAttr('<div style="a" onmouseover="x">') && !hasInjectedAttr('<div style="a&quot; onmouseover=&quot;x">')) // the check itself
+  const withColor = (over) => { const d = docOf([T('a', 'A', { style: { ...T('x').style, color: { kind: 'custom', value: quote } } }), T('b', 'B')]); Object.assign(d.theme.palette, over || {}); return d }
+  let styledPage = engine.render(withColor(), {})
+  assert.ok(!hasInjectedAttr(styledPage) && styledPage.includes('color:#fff&quot; onmouseover=&quot;window.p=3&quot; x=&quot;;')) // one attribute, the quote is data
+  styledPage = engine.render(withColor({ ink: quote, accent: quote, bg: quote, surface: quote }), {})
+  assert.ok(!hasInjectedAttr(styledPage))
+  // ...also in the markup the engine writes itself: a section/gate background, the counters and the music button
+  const bgDoc = docOf([T('a', 'A'), T('b', 'B')], [T('g', 'G')])
+  bgDoc.artboards[0].background = { kind: 'solid', color: { kind: 'custom', value: quote } }
+  bgDoc.artboards[1].background = { kind: 'solid', color: { kind: 'custom', value: quote } }
+  bgDoc.theme.palette.accent = quote
+  assert.ok(!hasInjectedAttr(engine.render(bgDoc, { audio: { background_music: 'https://x.example/a.mp3' } })))
+  // a font stack that legitimately holds double quotes keeps working
+  const fontDoc = docOf([T('a', 'A'), T('b', 'B')]); fontDoc.theme.fonts.display = fontDoc.theme.fonts.body = '"Cormorant Garamond", Georgia, serif'
+  assert.ok(engine.render(fontDoc, {}).includes('font-family:&quot;Cormorant Garamond&quot;, Georgia, serif'))
+
+  // a guest's stored RSVP answer is a head count, never markup
+  const hostile = core.guestEvents({ events: [{ nama_acara: 'A' }], guestId: 'g', guestEventQuota: { A: { mode: 'unlimited' } }, guestEventRsvp: { A: { dewasa: '2"><script>x</script>', anak: -3 } } }).events[0]
+  assert.deepStrictEqual([hostile.rsvpPrefillDewasa, hostile.rsvpPrefillAnak], [2, 0])
+  assert.strictEqual(core.guestEvents({ events: [{ nama_acara: 'A' }], guestId: 'g', guestEventQuota: { A: { mode: 'unlimited' } }, guestEventRsvp: { A: { dewasa: '7', anak: 1.9 } } }).events[0].rsvpPrefillDewasa, 7)
+}
+
 console.log('zedoc-core: ok')

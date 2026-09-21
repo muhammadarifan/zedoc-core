@@ -707,8 +707,142 @@
   }
 
   /** Literal imported SVG markup; colours are whatever the source baked in. */
+  // ---------------------------------------------------------------------
+  // SVG markup. A ZeDocument is JSON anyone with a designer token can store, and its `svg` nodes carry
+  // markup that used to be injected into the guest page as is - a <script>, an onload="..." or a
+  // style-breaking attribute in it ran on the page's origin. sanitizeSvg BUILDS the markup again from a
+  // short list of drawing elements and attributes (everything else is dropped, with its children), so
+  // what comes out is well-formed and script-free by construction rather than "filtered": text is
+  // escaped, attribute values are quoted and escaped, references may only point inside the same drawing
+  // (#id), and unknown/unclosed input is closed or ignored. The catalog's 317 svg nodes use ten elements
+  // and no script/link/style features, so they come out drawing the same.
+  // ---------------------------------------------------------------------
+  var SVG_ELEMENTS = {};
+  ('svg g defs path circle ellipse rect line polyline polygon text tspan title desc linearGradient radialGradient stop ' +
+    'clipPath mask pattern symbol marker use filter feGaussianBlur feOffset feBlend feColorMatrix feComposite feFlood ' +
+    'feMerge feMergeNode feMorphology feDropShadow').split(' ').forEach(function (name) { SVG_ELEMENTS[name.toLowerCase()] = name; });
+  var SVG_TEXT_ELEMENTS = { text: 1, tspan: 1, title: 1, desc: 1 };
+  // never read as markup: the content up to the closing tag is skipped whole
+  var SVG_RAW_ELEMENTS = { script: 1, style: 1 };
+  var SVG_XMLNS = { 'http://www.w3.org/2000/svg': 1, 'http://www.w3.org/1999/xlink': 1 };
+
+  function svgAttrValueOk(name, value) {
+    if (name === 'xmlns' || name.indexOf('xmlns:') === 0) return SVG_XMLNS[value] === 1;
+    if (name === 'href' || name === 'xlink:href') return /^#[A-Za-z0-9_.:\-]+$/.test(value); // inside this drawing only
+    if (/url\(\s*(?!['"]?#)/i.test(value)) return false; // fill="url(#id)" yes, url(http://...) no
+    if (/javascript\s*:|vbscript\s*:|data\s*:|expression\s*\(|@import|behavior\s*:|-moz-binding/i.test(value)) return false;
+    if (name === 'style') return !/[&\\]|\/\*/.test(value); // no entities/escapes/comments to hide a keyword in
+    return true;
+  }
+
+  function sanitizeSvg(markup) {
+    var src = String(markup == null ? '' : markup);
+    var n = src.length;
+    var out = '';
+    var stack = []; // the allowed elements currently open, canonical names
+    var skip = []; // the dropped elements currently open (their whole subtree is ignored)
+    var i = 0;
+    while (i < n) {
+      var lt = src.indexOf('<', i);
+      if (lt === -1) lt = n;
+      if (lt > i) {
+        // text: kept only inside <text>/<tspan>/<title>/<desc>; a bare < or > can never be markup
+        if (!skip.length && stack.length && SVG_TEXT_ELEMENTS[stack[stack.length - 1].toLowerCase()]) {
+          out += src.slice(i, lt).replace(/>/g, '&gt;');
+        }
+        i = lt;
+        if (i >= n) break;
+      }
+      // i is at '<'
+      if (src.substr(i, 4) === '<!--') { var endComment = src.indexOf('-->', i + 4); i = endComment === -1 ? n : endComment + 3; continue; }
+      if (src.substr(i, 9) === '<![CDATA[') {
+        var endCdata = src.indexOf(']]>', i + 9);
+        var cdata = src.slice(i + 9, endCdata === -1 ? n : endCdata);
+        if (!skip.length && stack.length && SVG_TEXT_ELEMENTS[stack[stack.length - 1].toLowerCase()]) out += cdata.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        i = endCdata === -1 ? n : endCdata + 3;
+        continue;
+      }
+      var next = src.charAt(i + 1);
+      if (next === '!' || next === '?') { var endDecl = src.indexOf('>', i); i = endDecl === -1 ? n : endDecl + 1; continue; }
+      var closing = next === '/';
+      var nameStart = i + (closing ? 2 : 1);
+      var m = /^[A-Za-z][A-Za-z0-9:_\-]*/.exec(src.slice(nameStart, nameStart + 64));
+      if (!m) { i += 1; continue; } // a '<' that starts no tag: dropped
+      var rawName = m[0];
+      var lower = rawName.toLowerCase();
+      var p = nameStart + rawName.length;
+      var attrs = [];
+      var selfClosing = false;
+      var complete = false;
+      // the tag's attributes, honouring quotes (a '>' inside a value does not end the tag)
+      while (p < n) {
+        var ch = src.charAt(p);
+        if (ch === '>') { p += 1; complete = true; break; }
+        if (ch === '/') { if (src.charAt(p + 1) === '>') { selfClosing = true; p += 2; complete = true; break; } p += 1; continue; }
+        if (/\s/.test(ch)) { p += 1; continue; }
+        var am = /^[^\s=\/>"']+/.exec(src.slice(p, p + 200));
+        if (!am) { p += 1; continue; }
+        var attrName = am[0];
+        p += attrName.length;
+        while (/\s/.test(src.charAt(p))) p += 1;
+        var attrValue = '';
+        if (src.charAt(p) === '=') {
+          p += 1;
+          while (/\s/.test(src.charAt(p))) p += 1;
+          var q = src.charAt(p);
+          if (q === '"' || q === "'") {
+            var endQuote = src.indexOf(q, p + 1);
+            if (endQuote === -1) { p = n; break; }
+            attrValue = src.slice(p + 1, endQuote);
+            p = endQuote + 1;
+          } else {
+            var um = /^[^\s>]*/.exec(src.slice(p, p + 2000));
+            attrValue = um[0];
+            p += attrValue.length;
+          }
+        }
+        attrs.push([attrName, attrValue]);
+      }
+      if (!complete) break; // an unterminated tag: nothing after it is trusted
+      i = p;
+
+      if (closing) {
+        if (skip.length) { if (skip[skip.length - 1] === lower) skip.pop(); continue; }
+        var at = -1;
+        for (var k = stack.length - 1; k >= 0; k--) if (stack[k].toLowerCase() === lower) { at = k; break; }
+        if (at === -1) continue; // closes nothing we opened
+        while (stack.length > at) out += '</' + stack.pop() + '>';
+        continue;
+      }
+      if (skip.length) { if (!selfClosing) skip.push(lower); continue; }
+      var canonical = SVG_ELEMENTS[lower];
+      if (!canonical) {
+        if (selfClosing) continue;
+        if (SVG_RAW_ELEMENTS[lower]) { // <script>/<style>: everything up to the matching end tag is text, not markup
+          var endRaw = src.toLowerCase().indexOf('</' + lower, i);
+          if (endRaw === -1) { i = n; } else { var closeAt = src.indexOf('>', endRaw); i = closeAt === -1 ? n : closeAt + 1; }
+          continue;
+        }
+        skip.push(lower);
+        continue;
+      }
+      var tag = '<' + canonical;
+      attrs.forEach(function (pair) {
+        var attr = pair[0];
+        var attrLower = attr.toLowerCase();
+        if (!/^[A-Za-z_][A-Za-z0-9_:.\-]*$/.test(attr) || attrLower.indexOf('on') === 0) return;
+        if (!svgAttrValueOk(attrLower, pair[1])) return;
+        tag += ' ' + attr + '="' + pair[1].replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '"';
+      });
+      if (selfClosing) out += tag + '/>';
+      else { out += tag + '>'; stack.push(canonical); }
+    }
+    while (stack.length) out += '</' + stack.pop() + '>';
+    return out;
+  }
+
   function svgView(node) {
-    return { tag: 'div', style: { width: '100%', height: '100%' }, html: node.markup };
+    return { tag: 'div', style: { width: '100%', height: '100%' }, html: sanitizeSvg(node.markup) };
   }
 
   function escapeHtml(s) {
@@ -742,7 +876,9 @@
       if (!Object.prototype.hasOwnProperty.call(view.attrs, name)) continue;
       attrs += view.attrs[name] === true ? ' ' + name : ' ' + name + '="' + escapeHtml(view.attrs[name]) + '"';
     }
-    var open = '<' + view.tag + attrs + (view.style ? ' style="' + styleText(view.style) + '"' : '') + '>';
+    // styleText is CSS, not markup: a value holding a quote (a colour, a font stack, a url) must not be able
+    // to close the attribute and start a new one, so it is escaped on its way into style="..."
+    var open = '<' + view.tag + attrs + (view.style ? ' style="' + escapeHtml(styleText(view.style)) + '"' : '') + '>';
     if (VOID_TAGS[view.tag]) return open;
     var inner = view.html != null ? view.html : (view.children || []).map(toHtml).join('');
     return open + inner + '</' + view.tag + '>';
@@ -1106,6 +1242,8 @@
     var note = QUOTA_NOTE[data.language] || QUOTA_NOTE.id;
     var quotas = data.guestEventQuota || {};
     var answers = data.guestEventRsvp || {};
+    // a stored answer is a head count: whatever was stored, only a whole number >= 0 goes into the page
+    function count(value) { return Math.max(0, parseInt(value, 10) || 0); }
     var enriched = events.map(function (ev) {
       var q = quotas[ev.nama_acara];
       var prev = answers[ev.nama_acara];
@@ -1113,8 +1251,8 @@
         hasQuotaNote: false, quotaNote: '',
         rsvpShowInputs: demo || !!q, rsvpMode: (q && q.mode) || 'category',
         rsvpDewasaMax: null, rsvpAnakMax: null, rsvpTotalMax: null,
-        rsvpPrefillDewasa: (prev && prev.dewasa) || 0,
-        rsvpPrefillAnak: (prev && prev.anak) || 0,
+        rsvpPrefillDewasa: prev ? count(prev.dewasa) : 0,
+        rsvpPrefillAnak: prev ? count(prev.anak) : 0,
         // a stored 0/0 is a real "tidak hadir", so "has answered" is not "count > 0"
         rsvpHasResponded: !!prev
       };
@@ -1222,7 +1360,7 @@
     mergeFontStyleOverride: mergeFontStyleOverride, resolveTextStyle: resolveTextStyle,
     findAsset: findAsset, resolveFill: resolveFill, resolveText: resolveText, bucketFor: bucketFor,
     resolveImageSrc: resolveImageSrc, frameStyle: frameStyle, clipStyleFor: clipStyleFor,
-    textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml,
+    textView: textView, imageView: imageView, shapeView: shapeView, svgView: svgView, sanitizeSvg: sanitizeSvg, toHtml: toHtml, styleText: styleText, escapeHtml: escapeHtml,
     GUEST_ROLES: GUEST_ROLES, guestRole: guestRole, isStretchShape: isStretchShape,
     iconSvg: iconSvg, iconView: iconView, ICONS: ICONS,
     nodeView: nodeView, groupCtx: groupCtx, childViews: childViews, repeatItemViews: repeatItemViews, contentViews: contentViews,

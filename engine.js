@@ -114,6 +114,8 @@
     return template.replace(/\{(\w+)\}/g, function (match, key) { return vars[key] != null ? vars[key] : match; });
   }
 
+  // CSS text for a style="..." written into raw markup: escaped, so a value holding a quote (a colour, a
+  // font stack) cannot close the attribute and start another one.
   function styleStr(obj) {
     var out = '';
     for (var key in obj) {
@@ -121,7 +123,7 @@
       var value = obj[key];
       if (value === undefined || value === null || value === '') continue;
       var cssKey = key.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
-      out += cssKey + ':' + value + ';';
+      out += cssKey + ':' + escapeHtml(value) + ';';
     }
     return out;
   }

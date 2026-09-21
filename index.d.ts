@@ -264,6 +264,12 @@ declare const core: {
    * there is no preset. Does not mutate its input.
    */
   applyLanguage<D extends Record<string, unknown>>(data: D, preset?: { fields?: Record<string, string>; textReplacements?: Record<string, string>; script?: Record<string, string> } | null): D
+  /**
+   * SVG markup rebuilt from a short allow-list of drawing elements/attributes (no script, event handlers, links,
+   * styles, images or external references; text and attribute values escaped; unclosed tags closed). What a
+   * document's `svg` node draws on a guest page goes through this - never the raw markup.
+   */
+  sanitizeSvg(markup: unknown): string
   withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }
