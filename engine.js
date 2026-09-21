@@ -66,7 +66,7 @@
       sheetSend: 'Kirim Jawaban', sheetSkip: 'Lewati', optional: 'Opsional',
       noteTitle: 'RSVP Tercatat', close: 'Tutup', noteAdult: '{n} Dewasa', noteChild: '{n} Anak',
       noteYes: '{parts} akan hadir', noteNo: 'Tidak dapat hadir',
-      pagePrev: '‹ Sebelumnya', pageNext: 'Selanjutnya ›', pageOf: 'Halaman {p} dari {n}'
+      pagePrev: '‹ Sebelumnya', pageNext: 'Selanjutnya ›', pageOf: 'Halaman {p} dari {n}', justNow: 'Baru saja'
     },
     en: {
       adult: 'Adults', child: 'Children', decrease: 'Decrease', increase: 'Increase',
@@ -83,7 +83,7 @@
       sheetSend: 'Send Answers', sheetSkip: 'Skip', optional: 'Optional',
       noteTitle: 'RSVP Recorded', close: 'Close', noteAdult: '{n} adult(s)', noteChild: '{n} child(ren)',
       noteYes: 'Attending: {parts}', noteNo: 'Unable to attend',
-      pagePrev: '‹ Previous', pageNext: 'Next ›', pageOf: 'Page {p} of {n}'
+      pagePrev: '‹ Previous', pageNext: 'Next ›', pageOf: 'Page {p} of {n}', justNow: 'Just now'
     },
     zh: {
       adult: '成人', child: '儿童', decrease: '减少', increase: '增加',
@@ -100,7 +100,7 @@
       sheetSend: '提交回答', sheetSkip: '跳过', optional: '选填',
       noteTitle: '回复已记录', close: '关闭', noteAdult: '{n} 位成人', noteChild: '{n} 位儿童',
       noteYes: '出席：{parts}', noteNo: '无法出席',
-      pagePrev: '‹ 上一页', pageNext: '下一页 ›', pageOf: '第 {p} / {n} 页'
+      pagePrev: '‹ 上一页', pageNext: '下一页 ›', pageOf: '第 {p} / {n} 页', justNow: '刚刚'
     }
   };
 
@@ -656,9 +656,14 @@
         if (role === 'wish-pager') {
           var pagerColors = ctx.theme.palette;
           var pagerButton = styleStr({ padding: '6px 14px', border: '1px solid ' + pagerColors.accent, borderRadius: px(Math.min(ctx.theme.radius || 0, 12)), background: 'transparent', color: pagerColors.accent, fontFamily: 'inherit', fontSize: px(12), cursor: 'pointer' });
-          var pageCount = Math.ceil((ctx.wishPaging || 0) / ZeDocCore.WISHES_PER_PAGE);
-          view.attrs = { 'data-zd2-wish-pager': true };
-          view.style = Object.assign({}, wrapStyle, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: pagerColors.ink });
+          var pageCount = Math.max(1, Math.ceil((ctx.wishTotal || 0) / ZeDocCore.WISHES_PER_PAGE));
+          var pagerShown = ctx.wishTotal > ZeDocCore.WISHES_PER_PAGE;
+          var pagerWish = node.wish || {};
+          // what the script needs to redraw the list as wishes come and go: the row pitch, the baseline row count,
+          // and how many wishes this page was drawn with
+          view.attrs = { 'data-zd2-wish-pager': true, 'data-zd2-wish-stride': String(pagerWish.stride || 0), 'data-zd2-wish-baseline': String(pagerWish.baseline || 1), 'data-zd2-wish-shown': String(ctx.wishShown || 0), 'data-zd2-wish-paged': pagerShown ? '1' : '0' };
+          if (!pagerShown) view.attrs['data-zd-hidden'] = '1';
+          view.style = Object.assign({}, wrapStyle, { display: pagerShown ? 'flex' : 'none', alignItems: 'center', justifyContent: 'space-between', fontFamily: ctx.theme.fonts.body, fontSize: px(12), color: pagerColors.ink });
           view.children = [{ raw:
             '<button type="button" data-zd2-wish-prev disabled style="' + pagerButton + '">' + escapeHtml(ctx.ui.pagePrev) + '</button>' +
             '<span data-zd2-wish-label>' + escapeHtml(fmt(ctx.ui.pageOf, { p: 1, n: pageCount })) + '</span>' +
@@ -1096,22 +1101,25 @@
     var guest = ZeDocCore.guestEvents(data);
     data = Object.assign({}, data, { events: guest.events, canRsvp: guest.canRsvp, rsvpLocked: guest.responded });
 
-    // A long wishes list is drawn one page at a time (ZeDocCore.withWishPager): the page is built from the first
-    // page's worth of wishes and the whole list travels as JSON for the pager to swap in.
-    var wishPaging = null;
-    if (Array.isArray(data.wishes) && data.wishes.length > ZeDocCore.WISHES_PER_PAGE) {
+    // The wishes list is drawn one page at a time (ZeDocCore.withWishPager): the page is built from the first
+    // page's worth of wishes and the whole list travels as JSON for the pager to swap in, and for a wish sent from
+    // this page to join (wishPagerScript). An empty list is drawn as one hidden placeholder card, the copy a first
+    // wish is made from.
+    var wishPaging = null, wishShown = 0;
+    if (Array.isArray(data.wishes)) {
       wishPaging = data.wishes.map(function (w) {
         w = w || {};
         return { name: String(w.name == null ? '' : w.name), time: String(w.time == null ? '' : w.time), message: String(w.message == null ? '' : w.message) };
       });
-      data = Object.assign({}, data, { wishes: data.wishes.slice(0, ZeDocCore.WISHES_PER_PAGE) });
+      wishShown = Math.min(wishPaging.length, ZeDocCore.WISHES_PER_PAGE);
+      data = Object.assign({}, data, { wishes: wishShown ? data.wishes.slice(0, wishShown) : [{ name: '', time: '', message: '' }] });
     }
     var wishPagerAdded = false;
 
     var role = opts.artboardRole || 'invitation';
     var artboards = doc.artboards.filter(function (a) { return a.role === role; });
     if (artboards.length === 0) artboards = doc.artboards.slice(0, 1);
-    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode, ui: ui, replacements: data.textReplacements, wishPaging: wishPaging ? wishPaging.length : 0 };
+    var ctx = { theme: doc.theme, data: data, assets: doc.assets || [], mode: 'guest', decorate: decorateNode, ui: ui, replacements: data.textReplacements, wishPaging: !!wishPaging, wishTotal: wishPaging ? wishPaging.length : 0, wishShown: wishShown };
 
     // A section's ctx swaps in its own merged theme (mergeTheme) so its
     // colours/fonts pick up ArtboardStyle.tsx's override (section.style) and,
@@ -1133,7 +1141,7 @@
         fontStyleOverride = mergeFontStyleOverride(fontStyleOverride, block.style.fontStyle);
       }
       if (theme === doc.theme && !fontStyleOverride) return ctx;
-      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride, ui: ui, replacements: data.textReplacements, wishPaging: wishPaging ? wishPaging.length : 0 };
+      return { theme: theme, data: data, assets: ctx.assets, mode: 'guest', decorate: decorateNode, fontStyleOverride: fontStyleOverride, ui: ui, replacements: data.textReplacements, wishPaging: !!wishPaging, wishTotal: wishPaging ? wishPaging.length : 0, wishShown: wishShown };
     }
 
     var stageWidth = artboards[0].size.w;
@@ -1403,13 +1411,16 @@
       'var name=(nameEl?nameEl.value.trim():"")||T.guestFallback;' +
       'if(!message){zd2Toast(T.wishEmpty);return;}' +
       'if(!wslug){zd2Toast(T.wishPreview);return;}' +
+      // the wish shows at once (first on page 1); a refusal takes it back out
+      'var undo=window.zd2AddWish?window.zd2AddWish({name:name,time:T.justNow,message:message}):null;' +
+      'if(undo){msgEl.value="";if(nameEl&&!nameEl.readOnly)nameEl.value="";}' +
       'zd2Toast(T.sending);' +
       'fetch("/api/invitations/"+encodeURIComponent(wslug)+"/wishes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name,message:message})})' +
       '.then(function(r){' +
-      'if(!r.ok){zd2Toast(r.status===429?T.wishLimit:T.wishFailed);return;}' +
-      'zd2Toast(T.wishThanks);setTimeout(function(){location.reload();},900);' +
+      'if(!r.ok){if(undo){undo();msgEl.value=message;}zd2Toast(r.status===429?T.wishLimit:T.wishFailed);return;}' +
+      'zd2Toast(T.wishThanks);' +
       '})' +
-      '.catch(function(){zd2Toast(T.wishOffline);});' +
+      '.catch(function(){if(undo){undo();msgEl.value=message;}zd2Toast(T.wishOffline);});' +
       '}});' +
       '})();';
 
@@ -1467,33 +1478,49 @@
     };
     (guest.events || []).forEach(function (ev) { if (ev && ev.nama_acara) followUpCfg.events[ev.nama_acara] = { keterangan: ev.keterangan, venue: ev.venue }; });
 
-    // The wishes pager: swaps the next batch of wishes (window.zd2Wishes, all of them) into the slots the page drew,
-    // hides the slots a short last page does not need, and moves the pager and the section end up by their height;
-    // the text flow (window.zdReflow) then lays the section and everything after it out again.
+    // The wishes list on the page: the pager swaps the next batch of wishes (window.zd2Wishes, all of them) into the
+    // slots the page drew, hides the slots a short page does not need, and moves the pager and the section end by
+    // the rows added or removed. A slot the page did not draw (a list of 3 that gets a 4th) is a copy of the first
+    // one, and window.zd2AddWish puts a wish just sent at the head of the list - so a wish shows without a reload.
+    // The text flow (window.zdReflow) then lays the section and everything after it out again.
     var wishPagerScript = '(function(){' +
-      'var all=window.zd2Wishes,T=window.zd2T,PER=' + ZeDocCore.WISHES_PER_PAGE + ';' +
+      'var all=window.zd2Wishes,T=window.zd2T,PER=' + ZeDocCore.WISHES_PER_PAGE + ',ROOM=' + ZeDocCore.WISH_PAGER_ROOM + ';' +
       'var pager=document.querySelector("[data-zd2-wish-pager]");if(!all||!pager)return;' +
       'var section=pager.closest("[data-zd-section-index]");if(!section)return;' +
-      'var pages=Math.ceil(all.length/PER),page=0;' +
+      'var page=0;' +
       'var prev=pager.querySelector("[data-zd2-wish-prev]"),next=pager.querySelector("[data-zd2-wish-next]"),label=pager.querySelector("[data-zd2-wish-label]");' +
       // an element's authored top, remembered under the attribute the text flow starts from (same value it would record)
       'function baseTop(el){var v=el.getAttribute("data-zd-flow-base-top");if(v===null){v=String(parseFloat(el.style.top)||0);el.setAttribute("data-zd-flow-base-top",v);}return parseFloat(v)||0;}' +
       'function texts(i){var out=[],els=document.querySelectorAll("[data-zd2-wish-i]");for(var k=0;k<els.length;k++)if(els[k].getAttribute("data-zd2-wish-i")===String(i))out.push(els[k]);return out;}' +
       // a slot is the wrapper around its texts: text -> its positioned box -> the repeat item
       'var slots=[];for(var i=0;i<PER;i++){var t=texts(i)[0];slots.push(t?t.parentElement.parentElement:null);}' +
-      'if(!slots[0]||!slots[1])return;' +
-      'var stride=baseTop(slots[1])-baseTop(slots[0]),pagerTop=baseTop(pager),height=parseFloat(section.getAttribute("data-zd-base-height"))||0;' +
-      'function show(p){page=p;var start=p*PER,n=Math.min(PER,all.length-start);' +
-      'for(var i=0;i<PER;i++){var s=slots[i];if(!s)continue;' +
+      'var stride=parseFloat(pager.getAttribute("data-zd2-wish-stride"))||0,baseline=parseInt(pager.getAttribute("data-zd2-wish-baseline"),10)||1;' +
+      'var shown0=parseInt(pager.getAttribute("data-zd2-wish-shown"),10)||0,paged0=pager.getAttribute("data-zd2-wish-paged")==="1";' +
+      'if(!slots[0]||!stride)return;' +
+      'var pagerTop=baseTop(pager),height=parseFloat(section.getAttribute("data-zd-base-height"))||0;' +
+      'function make(i){var c=slots[0].cloneNode(true);var top=baseTop(slots[0])+i*stride;c.setAttribute("data-zd-flow-base-top",String(top));c.style.top=top+"px";' +
+      'c.removeAttribute("data-zd-hidden");c.style.display="";' +
+      'Array.prototype.forEach.call(c.querySelectorAll("[data-zd2-wish-i]"),function(el){el.setAttribute("data-zd2-wish-i",String(i));});' +
+      'Array.prototype.forEach.call(c.querySelectorAll("[id]"),function(el){el.removeAttribute("id");});' +
+      'slots[i-1].parentNode.insertBefore(c,slots[i-1].nextSibling);return c;}' +
+      'function show(p){var pages=Math.max(1,Math.ceil(all.length/PER));page=Math.min(Math.max(p,0),pages-1);var start=page*PER,n=Math.min(PER,all.length-start),paged=all.length>PER;' +
+      'for(var i=0;i<PER;i++){if(i<n&&!slots[i])slots[i]=make(i);var s=slots[i];if(!s)continue;' +
       'if(i<n){texts(i).forEach(function(el){el.textContent=all[start+i][el.getAttribute("data-zd2-wish-key")];});s.removeAttribute("data-zd-hidden");s.style.display="";}' +
       'else{s.setAttribute("data-zd-hidden","1");s.style.display="none";}}' +
-      'var gone=(PER-n)*stride;' +
-      'pager.setAttribute("data-zd-flow-base-top",String(pagerTop-gone));section.setAttribute("data-zd-base-height",(height-gone)+"px");' +
-      'label.textContent=T.pageOf.replace("{p}",p+1).replace("{n}",pages);' +
-      'prev.disabled=p===0;next.disabled=p===pages-1;' +
+      // rows beyond what the server laid out (never fewer than the list's baseline rows) move what is below them
+      'var grow=(Math.max(n,baseline)-Math.max(shown0,baseline))*stride;' +
+      'pager.setAttribute("data-zd-flow-base-top",String(pagerTop+grow));' +
+      'section.setAttribute("data-zd-base-height",(height+grow+(paged?ROOM:0)-(paged0?ROOM:0))+"px");' +
+      'if(paged){pager.removeAttribute("data-zd-hidden");pager.style.display="flex";}else{pager.setAttribute("data-zd-hidden","1");pager.style.display="none";}' +
+      'label.textContent=T.pageOf.replace("{p}",page+1).replace("{n}",pages);' +
+      'prev.disabled=page===0;next.disabled=page===pages-1;' +
       'if(window.zdReflow)window.zdReflow();}' +
       'document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("[data-zd2-wish-prev],[data-zd2-wish-next]");' +
       'if(!b||b.disabled)return;show(b.hasAttribute("data-zd2-wish-prev")?page-1:page+1);});' +
+      // a wish the guest just sent: first on page 1; the returned function takes it back out (the server refused it)
+      'window.zd2AddWish=function(w){all.unshift(w);show(0);return function(){var at=all.indexOf(w);if(at!==-1)all.splice(at,1);show(0);};};' +
+      // a page drawn with no wishes carries one placeholder card, the copy new wishes are made from - hide it now
+      'if(!shown0)show(0);' +
       '})();';
 
     // The dewasa/anak counters of the RSVP cards (decorateNode's 'guest-count' role).

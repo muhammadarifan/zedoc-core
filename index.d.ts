@@ -273,11 +273,14 @@ declare const core: {
   /** How many wishes the guest page draws at a time; a pager swaps the rest in. */
   WISHES_PER_PAGE: number
   /**
-   * Adds the wishes pager (a 'Wish pager' group) under the wishes list when `total` exceeds WISHES_PER_PAGE; `extra`
-   * is how much taller the section became. No wishes repeat, one page of wishes, or an existing pager: unchanged.
+   * Adds the wishes pager (a 'Wish pager' group) under the wishes list; `extra` is how much taller the section became
+   * (WISH_PAGER_ROOM when `total` exceeds WISHES_PER_PAGE, else 0: the pager is there but hidden). No wishes repeat
+   * or an existing pager: unchanged.
    */
   withWishPager<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[], total: number): { nodes: T[]; extra: number; added: boolean }
   pluralize(text: string): string
+  /** The height the visible pager adds to its section. */
+  WISH_PAGER_ROOM: number
   withGuestCounts<T extends { type: string; frame: { y: number; h: number } }>(nodes: T[]): { nodes: T[]; extra: number }
   reflowNodes<T extends ReflowNodeLike>(nodes: (T | RepeatNodeLike)[], data: Record<string, unknown>): ReflowResult<T | RepeatNodeLike>
 }

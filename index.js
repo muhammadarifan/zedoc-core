@@ -1368,21 +1368,26 @@
   // page draws WISHES_PER_PAGE of them and a pager under the list swaps the next batch into the same slots (as the
   // .dc.html engine did with its 5 per page). This adds the pager to the wishes section: one 'Wish pager' group at
   // the end of the list's baseline box (it follows the list down when the list has several items), and the section
-  // grows by the pager's height. Nothing changes for a list that fits on one page. Returns { nodes, extra, added }.
+  // grows by the pager's height. A list that fits on one page still gets the pager, hidden and with no height, so a wish
+  // sent from the page can appear without a reload. Returns { nodes, extra, added }.
   // ---------------------------------------------------------------------
-  var WISHES_PER_PAGE = 5, WISH_PAGER_H = 32, WISH_PAGER_GAP = 12;
+  var WISHES_PER_PAGE = 5, WISH_PAGER_H = 32, WISH_PAGER_GAP = 12, WISH_PAGER_ROOM = WISH_PAGER_H + WISH_PAGER_GAP;
   function withWishPager(nodes, total) {
     var repeat = nodes.filter(function (n) { return n.type === 'repeat' && n.listKey === 'wishes'; })[0];
     var has = nodes.some(function (n) { var r = guestRole(n); return !!r && r.role === 'wish-pager'; });
-    if (!(total > WISHES_PER_PAGE) || !repeat || has) return { nodes: nodes, extra: 0, added: false };
-    var end = repeat.frame.y + repeat.frame.h * (repeat.verifiedCount != null ? repeat.verifiedCount : 1);
-    var extra = WISH_PAGER_H + WISH_PAGER_GAP;
+    if (!repeat || has) return { nodes: nodes, extra: 0, added: false };
+    var baseline = repeat.verifiedCount != null ? repeat.verifiedCount : 1;
+    var end = repeat.frame.y + repeat.frame.h * baseline;
+    // Up to one page the pager is there but hidden and takes no room: a wish sent from this page can turn it on
+    // without a reload (wishPagerScript).
+    var extra = total > WISHES_PER_PAGE ? WISH_PAGER_ROOM : 0;
     var pager = {
       id: 'zd-wish-pager', name: 'Wish pager', type: 'group', opacity: 1, visible: true, locked: false,
-      frame: { x: repeat.frame.x, y: end, w: repeat.frame.w, h: WISH_PAGER_H, rotate: 0, flipX: false, flipY: false }, children: []
+      frame: { x: repeat.frame.x, y: end, w: repeat.frame.w, h: WISH_PAGER_H, rotate: 0, flipX: false, flipY: false }, children: [],
+      wish: { stride: repeat.frame.h, baseline: baseline }
     };
     var out = nodes.map(function (n) {
-      if (n !== repeat && n.frame.y >= end - 1) return Object.assign({}, n, { frame: Object.assign({}, n.frame, { y: n.frame.y + extra }) });
+      if (extra && n !== repeat && n.frame.y >= end - 1) return Object.assign({}, n, { frame: Object.assign({}, n.frame, { y: n.frame.y + extra }) });
       return n;
     });
     out.push(pager);
@@ -1390,7 +1395,7 @@
   }
 
   return {
-    SECTIONS: SECTIONS, sectionOf: sectionOf, WISHES_PER_PAGE: WISHES_PER_PAGE, withWishPager: withWishPager, guestEvents: guestEvents, pluralize: pluralize, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
+    SECTIONS: SECTIONS, sectionOf: sectionOf, WISHES_PER_PAGE: WISHES_PER_PAGE, WISH_PAGER_ROOM: WISH_PAGER_ROOM, withWishPager: withWishPager, guestEvents: guestEvents, pluralize: pluralize, applyLanguage: applyLanguage, withGuestCounts: withGuestCounts,
     motionStyle: motionStyle, MOTION_KEYFRAMES: MOTION_KEYFRAMES,
     repeatGridPlacements: repeatGridPlacements, reflowNodes: reflowNodes, flowBoxes: flowBoxes,
     FIELDS: FIELDS, LISTS: LISTS, findField: findField, isKnownField: isKnownField,

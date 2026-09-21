@@ -811,9 +811,15 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   const foot = T('foot', 'Footer text', { frame: rect(32, 230, 100, 20) })
   const wishes = (n) => Array.from({ length: n }, (_, i) => ({ name: 'Tamu ' + (i + 1), time: i + 1 + ' hari lalu', message: 'Ucapan ke-' + (i + 1) }))
 
-  // core: nothing to page = nothing changes; a list over one page gets a pager and the section grows
+  // core: a list that fits one page still gets the pager, hidden and with no room, so a new wish can turn it on;
+  // over one page the section grows by the pager's room
   const plain = [T('h', 'Head'), wishRepeat(), foot]
-  for (const total of [0, 1, core.WISHES_PER_PAGE]) assert.deepStrictEqual(core.withWishPager(plain, total), { nodes: plain, extra: 0, added: false })
+  for (const total of [0, 1, core.WISHES_PER_PAGE]) {
+    const fits = core.withWishPager(plain, total)
+    assert.ok(fits.added && fits.extra === 0 && fits.nodes.find((n) => n.id === 'foot').frame.y === 230) // nothing below moves
+    assert.deepStrictEqual(fits.nodes.find((n) => n.id === 'zd-wish-pager').wish, { stride: 116, baseline: 1 }) // what the page script needs
+  }
+  assert.strictEqual(core.WISH_PAGER_ROOM, 44)
   assert.strictEqual(core.WISHES_PER_PAGE, 5)
   assert.deepStrictEqual(core.withWishPager([T('h', 'Head'), foot], 20), { nodes: [T('h', 'Head'), foot], extra: 0, added: false }) // no wishes list in this section
   const paged = core.withWishPager(plain, 12)
@@ -830,8 +836,15 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   const baseH = (h) => +h.match(/data-zd-base-height="(\d+)px"/)[1]
   const one = engine.render(wishDoc, { wishes: wishes(5) })
   const many = engine.render(wishDoc, { wishes: wishes(12) })
-  assert.ok(!one.includes('zd2Wishes') && !one.includes('data-zd2-wish') && !one.includes('wish-pager')) // one page: no pager, no slot marks, no script
-  assert.ok(!engine.render(wishDoc, { wishes: [] }).includes('zd2Wishes'))
+  // one page: the pager and the slot marks are there for a new wish, but the pager is hidden and takes no height
+  assert.ok(one.includes('window.zd2Wishes=') && one.includes('data-zd2-wish-pager') && one.includes('data-zd2-wish-paged="0"') && one.includes('data-zd-hidden="1"') && one.includes('data-zd2-wish-shown="5"'))
+  assert.ok(many.includes('data-zd2-wish-paged="1"') && many.includes('data-zd2-wish-stride="116"') && many.includes('data-zd2-wish-baseline="1"'))
+  assert.strictEqual([...one.matchAll(/data-zd2-wish-i="\d" data-zd2-wish-key=/g)].length, 15)
+  // no wishes yet: one placeholder card (the copy a first wish is made from), the section as tall as with one wish
+  const none = engine.render(wishDoc, { wishes: [] })
+  assert.ok(none.includes('window.zd2Wishes=[]') && none.includes('data-zd2-wish-shown="0"') && [...none.matchAll(/data-zd2-wish-i="0" data-zd2-wish-key=/g)].length === 3)
+  assert.strictEqual(baseH(none), baseH(engine.render(wishDoc, { wishes: wishes(1) })))
+  assert.ok(!engine.render(wishDoc, {}).includes('zd2Wishes')) // no wishes list in the data at all: nothing added
   const body = many.replace(/<script[\s\S]*?<\/script>/g, '')
   assert.ok(body.includes('>Ucapan ke-1<') && body.includes('>Ucapan ke-5<') && !body.includes('Ucapan ke-6')) // page 1 only
   assert.strictEqual([...many.matchAll(/data-zd2-wish-i="(\d)" data-zd2-wish-key="(name|time|message)"/g)].length, 15) // 5 slots x 3 texts
@@ -841,7 +854,7 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.deepStrictEqual(JSON.parse(json), wishes(12)) // every wish, in order, all three fields
   assert.ok(many.includes('data-zd2-wish-pager') && many.includes('data-zd2-wish-prev disabled') && many.includes('>Halaman 1 dari 3<') && many.includes('‹ Sebelumnya') && many.includes('Selanjutnya ›'))
   assert.ok(many.includes('[data-zd2-wish-pager] button:disabled{'))
-  assert.ok(!one.includes('[data-zd2-wish-pager]'))
+  assert.ok(one.includes('[data-zd2-wish-pager] button:disabled{'))
   assert.ok(many.includes('window.zdReflow=run;') && many.includes('data-zd-hidden')) // the flow can be re-run and skips hidden slots
   // the pager follows the language
   assert.ok(engine.render(wishDoc, { language: 'en', wishes: wishes(12) }).includes('>Page 1 of 3<'))
@@ -857,6 +870,10 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   // a wishes section the couple switched off draws nothing, so nothing is added
   const off = engine.render(wishDoc, { wishes: wishes(12), sections: { wishes: false } })
   assert.ok(!off.includes('zd2Wishes') && !off.includes('data-zd2-wish-pager'))
+  // a wish sent from the page appears without a reload: the handler adds it, and takes it back if the server refuses
+  assert.ok(many.includes('window.zd2AddWish=function(w)') && many.includes('var undo=window.zd2AddWish?window.zd2AddWish({name:name,time:T.justNow,message:message}):null;'))
+  assert.ok(!many.includes('location.reload'))
+  assert.ok(many.includes('"justNow":"Baru saja"') && engine.render(wishDoc, { language: 'en', wishes: [] }).includes('"justNow":"Just now"'))
   // the count of wishes is the only thing that turns paging on: the same doc with other lists is untouched
   assert.ok(!engine.render(docOf([T('a', 'A'), T('b', 'B')]), { wishes: wishes(12) }).includes('zd2Wishes'))
 }
