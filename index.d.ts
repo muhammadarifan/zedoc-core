@@ -85,6 +85,8 @@ export interface ResolveContext {
     links?: Record<string, string>
     audio?: Record<string, string>
     images?: Record<string, string>
+    /** The couple's own px font sizes by field key (the wizard's text sizes); wins over the template's size. */
+    typography?: Record<string, number | string>
   }
   assets: { id: string; src: string }[]
   repeatItem?: Record<string, unknown> | null

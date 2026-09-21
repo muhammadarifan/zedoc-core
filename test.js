@@ -585,4 +585,41 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.ok(gift({ language: 'en', sections: { 'send-gift': false, envelope: false }, fields: { teks_pesan_tanpa_kado: 'Just pray' } }).includes('Just pray'))
 }
 
+// --- typography (the couple's own font sizes) ----------------------------------------------------
+{
+  const bound = T('t1', 'Judul', { binding: { key: 'judul_acara' } })
+  const base = bound.style.size
+  const sizeOf = (node, typography, extra) => core.resolveTextStyle(node, { data: { typography }, ...extra }).size
+  assert.strictEqual(sizeOf(bound, { judul_acara: 30 }), 30)
+  assert.strictEqual(sizeOf(bound, { judul_acara: '40' }), 40)
+  assert.strictEqual(sizeOf(bound, { judul_acara: ' 40px ' }), 40)
+  assert.strictEqual(sizeOf(bound, { judul_acara: 22.5 }), 22.5)
+  for (const junk of [0, -4, '', null, undefined, '2rem', '50%', 'big', 1000, NaN, {}, []]) assert.strictEqual(sizeOf(bound, { judul_acara: junk }), base, String(junk)) // not a px size: the template's own
+  assert.strictEqual(sizeOf(bound, { tanggal_acara_cover: 30 }), base) // another field's size
+  assert.strictEqual(sizeOf(bound, { constructor: 30 }), base)
+  assert.strictEqual(core.resolveTextStyle(bound, { data: {} }).size, base) // no typography at all
+  // it beats a group's font-style override (the .dc.html engine used !important) but leaves weight/italic to it
+  const tokenNode = { ...bound, style: { ...bound.style, font: { kind: 'token', token: 'display' } } }
+  const withOverride = { fontStyleOverride: { display: { size: 99, weight: 700 } } }
+  assert.deepStrictEqual([sizeOf(tokenNode, { judul_acara: 30 }, withOverride), core.resolveTextStyle(tokenNode, { data: { typography: { judul_acara: 30 } }, ...withOverride }).weight], [30, 700])
+  // an unbound text is not resized, except the combined couple-names line: the groom's size, else the bride's
+  const plain = T('t2', 'Kata', { binding: null })
+  const names = T('t3', 'Cover names', { binding: null })
+  assert.strictEqual(sizeOf(plain, { nama_panggilan_mempelai_1: 40 }), plain.style.size)
+  assert.strictEqual(sizeOf(names, { nama_panggilan_mempelai_1: 40, nama_panggilan_mempelai_2: 50 }), 40)
+  assert.strictEqual(sizeOf(names, { nama_panggilan_mempelai_2: 50 }), 50)
+  assert.strictEqual(sizeOf(names, { nama_panggilan_mempelai_1: 'x', nama_panggilan_mempelai_2: 50 }), 50) // an unusable groom size falls to the bride's
+  assert.strictEqual(sizeOf(names, {}), names.style.size)
+  // the guest page draws it: font-size on the text, and the box grows by the flow as for any long text
+  const typoDoc = docOf([T('a', 'a', { binding: { key: 'judul_acara' }, text: 'Judul' }), T('b', 'Cover names', { binding: null, text: 'A & B' }), T('c', 'c', { text: 'Tetap' })])
+  const typoPage = engine.render(typoDoc, { typography: { judul_acara: 31, nama_panggilan_mempelai_1: 47 } })
+  const sizes = [...typoPage.matchAll(/font-size:([\d.]+)px;[^"]*">(Judul|Bagas &amp; Larasati|Tetap)</g)].map((m) => [m[2], +m[1]])
+  assert.deepStrictEqual(sizes, [['Judul', 31], ['Bagas &amp; Larasati', 47], ['Tetap', 20]])
+  // the opening gate flows like a section: it carries its authored height and can be refitted when a text grows
+  const gatePage = engine.render(docOf([box('r1')], [T('g', 'Guest', { binding: { key: 'guest_name' }, text: 'Nama' })]), { typography: { guest_name: 34 } })
+  assert.ok(/id="zd-gate-stage" data-zd-base-height="200px"/.test(gatePage) && gatePage.includes('window.zdGateHeight=function(h){GH=h;fitGate();}'))
+  assert.ok(gatePage.includes('document.getElementById("zd-gate-stage")') && gatePage.includes('gflow.shift')) // grows by the shift, not to a decoration hanging past the edge
+  assert.ok(/font-size:34px;[^"]*">Nama</.test(gatePage)) // and the size reaches the gate's text too
+}
+
 console.log('zedoc-core: ok')

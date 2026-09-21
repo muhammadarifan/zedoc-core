@@ -1050,7 +1050,7 @@
         'this.style.opacity=0;this.style.visibility=\'hidden\';this.style.pointerEvents=\'none\'' +
         // animations behind the gate wait for it to open (zdMotionStart below)
         (motionUsed.any ? ';window.zdMotionStart&&window.zdMotionStart()' : '') + '">' +
-        '<div id="zd-gate-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(envelope.size.w), height: px(gateTotalHeight) }) + gateBgStyle + '">' +
+        '<div id="zd-gate-stage" data-zd-base-height="' + px(gateTotalHeight) + '" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(envelope.size.w), height: px(gateTotalHeight) }) + gateBgStyle + '">' +
         gateBodyHtml +
         '</div></div>';
       gateScript = 'var GW=' + envelope.size.w + ',GH=' + gateTotalHeight + ',gateStage=document.getElementById("zd-gate-stage");' +
@@ -1059,6 +1059,7 @@
         // content taller than the viewport must shrink to fit or it's simply
         // clipped with no way to scroll to the rest.
         'function fitGate(){var s=Math.min(1,window.innerWidth/GW,window.innerHeight/GH);gateStage.style.transform="scale("+s+")";gateStage.style.transformOrigin="top left";gateStage.style.left=Math.max(0,(window.innerWidth-GW*s)/2)+"px";gateStage.style.top=Math.max(0,(window.innerHeight-GH*s)/2)+"px";}' +
+        'window.zdGateHeight=function(h){GH=h;fitGate();};' +
         'window.addEventListener("resize",fitGate);fitGate();';
     }
 
@@ -1127,6 +1128,12 @@
       'function run(){' +
       'var sections=Array.prototype.slice.call(document.querySelectorAll("[data-zd-section-index]"));' +
       'if(!sections.length)return;' +
+      // the opening gate is one more stage of absolutely placed nodes: a long guest name (or a larger
+      // font size) pushes what is below it down, and the gate is fitted to its new height. It grows by how far
+      // its lowest content moved (flowed.shift), not to the lowest bottom: decoration may hang past the edge
+      'var gate=document.getElementById("zd-gate-stage");' +
+      'if(gate&&window.zdGateHeight){var gboxes=boxesOf(gate),gflow=flowBoxes(gboxes);apply(gboxes);' +
+      'var gh=(parseFloat(gate.getAttribute("data-zd-base-height"))||0)+Math.max(0,gflow.shift);gate.style.height=gh+"px";window.zdGateHeight(gh);}' +
       'var cursor=0;' +
       'sections.forEach(function(section){' +
       'var boxes=boxesOf(section);' +

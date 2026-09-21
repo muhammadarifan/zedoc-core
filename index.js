@@ -287,11 +287,33 @@
   }
 
   /** The size/weight/italic/underline a text node renders with, after ctx.fontStyleOverride. */
+  // A pixel size out of a typography value (the wizard writes plain numbers, 8-160): a number, a
+  // numeric string, or "40px". Anything else - empty, 0, another unit - is no override.
+  function typographyPx(value) {
+    var n = typeof value === 'number' ? value : (typeof value === 'string' && /^\s*[0-9.]+(px)?\s*$/.test(value) ? parseFloat(value) : NaN);
+    return isFinite(n) && n > 0 && n < 1000 ? n : null;
+  }
+
+  /**
+   * The couple's own font size for a text (wizard "Ukuran teks", ctx.data.typography by field key), which
+   * wins over the template's size and any group override, as the .dc.html engine's `!important` did.
+   * Most templates draw the two names as ONE line ("Cover names": a text with no binding), which cannot
+   * take two sizes: it follows the groom's size, else the bride's.
+   */
+  function typographySize(node, ctx) {
+    var sizes = ctx.data && ctx.data.typography;
+    if (!sizes) return null;
+    if (node.binding) return typographyPx(sizes[node.binding.key]);
+    var role = guestRole(node);
+    if (role && role.role === 'couple-names') return typographyPx(sizes.nama_panggilan_mempelai_1) || typographyPx(sizes.nama_panggilan_mempelai_2);
+    return null;
+  }
+
   function resolveTextStyle(node, ctx) {
     var token = node.style.font.kind === 'token' ? node.style.font.token : null;
     var override = (token && ctx.fontStyleOverride) ? ctx.fontStyleOverride[token] : null;
     function pick(key) { return (override && override[key] != null) ? override[key] : node.style[key]; }
-    return { size: pick('size'), weight: pick('weight'), italic: pick('italic'), underline: pick('underline') };
+    return { size: typographySize(node, ctx) || pick('size'), weight: pick('weight'), italic: pick('italic'), underline: pick('underline') };
   }
 
   function findAsset(assets, assetId) {
