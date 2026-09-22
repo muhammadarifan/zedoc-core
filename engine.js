@@ -1081,8 +1081,12 @@
     // it from the RSVP link/`?to=` param) - fold it into the fields bucket
     // so a plain {binding:{key:'guest_name'}} text node resolves through
     // the same resolveText()/bucketFor() path as any other field, no
-    // special-cased resolution needed.
-    data.fields.guest_name = data.fields.guest_name || data.guestName || undefined;
+    // special-cased resolution needed. guestName wins when present - a
+    // stale fields.guest_name left over from an old save (or a test RSVP)
+    // must never outrank the name the caller is actually asking to render;
+    // the stored field is only a fallback for contexts with no guestName at
+    // all (template-designer previews).
+    data.fields.guest_name = data.guestName || data.fields.guest_name || undefined;
 
     // Display order only - couple[0]/[1] are always stored as groom/bride
     // (the wizard's Data Mempelai step edits them by that fixed position),
