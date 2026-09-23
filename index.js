@@ -26,10 +26,35 @@
     return { placements: placements, totalHeight: totalHeight };
   }
 
-  /** Shared repeat geometry used by React and the guest DOM adapter. */
+  /**
+   * Shared repeat geometry used by React and the guest DOM adapter.
+   *
+   * Recurses one call per nesting level into a top-level `group`'s own
+   * children - a group dropped in via Ze Designer's Blocks panel sits
+   * alongside a section's other top-level nodes (not as the section's sole
+   * wrapping group, the only case `unwrapBlock` flattens), so a repeat
+   * inside it would otherwise never reach this function's top-level-only
+   * `nodes.forEach` and never grow past its 1-item baseline height - found
+   * live as an RSVP block's second real event overlapping the "Kirim
+   * Konfirmasi" button below it. The group's own growth is registered as a
+   * `repeats` contribution at the group's own `y` (so later top-level
+   * siblings still shift down by it, same as a plain top-level repeat
+   * always has), and `items[i].childLayout` carries the recursive result
+   * so the renderer can apply the same y-shift/height-grow to the group's
+   * own children (see childViews/contentViews below).
+   */
   function reflowNodes(nodes, data) {
     var repeats = [];
-    nodes.forEach(function (node) {
+    var childLayouts = {};
+    nodes.forEach(function (node, i) {
+      if (node.type === 'group' && Array.isArray(node.children) && node.children.length) {
+        var childLayout = reflowNodes(node.children, data);
+        if (childLayout.extra > 0) {
+          repeats.push({ y: node.frame.y, amount: childLayout.extra });
+          childLayouts[i] = childLayout;
+        }
+        return;
+      }
       if (node.type !== 'repeat') return;
       var items = data[node.listKey];
       var count = Array.isArray(items) ? items.length : 0;
@@ -59,8 +84,8 @@
       return total;
     }
 
-    var items = nodes.map(function (node) {
-      return { node: node, y: node.frame.y + shiftAbove(node.frame.y) };
+    var items = nodes.map(function (node, i) {
+      return { node: node, y: node.frame.y + shiftAbove(node.frame.y), childLayout: childLayouts[i] };
     });
 
     var bgHeightGrow = {};
@@ -930,10 +955,22 @@
 
   var CHECKERBOARD = 'repeating-conic-gradient(#e9e9ee 0% 25%, #f7f7fa 0% 50%) 50% / 16px 16px';
 
-  function childViews(nodes, ctx, path) {
+  // `childLayout` (a reflowNodes() result for this same `nodes` array) is
+  // only set on the guest render path - it applies the y-shift/height-grow
+  // a nested repeat earned back onto this level's own children, the same
+  // way the top-level render loop applies it to a section's own nodes. See
+  // reflowNodes' doc comment for why a group's children need this at all.
+  function childViews(nodes, ctx, path, childLayout) {
     var out = [];
     for (var i = 0; i < nodes.length; i++) {
-      var view = nodeView(nodes[i], ctx, { path: childPath(path, nodes[i].id) });
+      var o = { path: childPath(path, nodes[i].id) };
+      var entry = childLayout && childLayout.items[i];
+      if (entry) {
+        o.y = entry.y;
+        o.heightGrow = childLayout.bgHeightGrow[i];
+        o.childLayout = entry.childLayout;
+      }
+      var view = nodeView(nodes[i], ctx, o);
       if (!view) continue;
       if (view.fragment) out = out.concat(view.fragment); else out.push(view);
     }
@@ -1008,7 +1045,7 @@
     return views;
   }
 
-  function contentViews(node, ctx, path) {
+  function contentViews(node, ctx, path, o) {
     switch (node.type) {
       case 'text': return [textView(node, ctx, { autoHeight: ctx.mode === 'edit', measure: ctx.mode === 'edit' ? path : undefined })];
       case 'image': return [imageView(node, ctx)];
@@ -1019,7 +1056,7 @@
         return icon ? [icon] : [];
       }
       case 'group': {
-        var inner = childViews(node.children, groupCtx(node, ctx), path);
+        var inner = childViews(node.children, groupCtx(node, ctx), path, o && o.childLayout);
         // a "frame" crops its children to a shape; an empty one shows the same
         // checkerboard as an empty image so there is something to drop onto
         if (!node.clip) return inner;
@@ -1034,9 +1071,12 @@
   }
 
   /**
-   * `o`: { path, y, heightGrow } - y/heightGrow are the repeat reflow's
-   * override (guest); the canvas's flow comes through ctx.place(path).
-   * Returns null for a hidden node; a repeat returns { fragment: [items] }.
+   * `o`: { path, y, heightGrow, childLayout } - y/heightGrow are the repeat
+   * reflow's override (guest); the canvas's flow comes through
+   * ctx.place(path). `childLayout`, when this node is a `group`, is that
+   * same reflow applied one level down onto its own children (see
+   * reflowNodes/childViews). Returns null for a hidden node; a repeat
+   * returns { fragment: [items] }.
    */
   function nodeView(node, ctx, o) {
     if (node.visible === false) return null;
@@ -1064,7 +1104,7 @@
       // a partial background stretches with the text that grows inside it
       attrs['data-zd-flow-bg'] = '1';
     }
-    var view = { tag: 'div', attrs: attrs, style: frameStyle(frame, node.opacity), children: contentViews(node, ctx, path) };
+    var view = { tag: 'div', attrs: attrs, style: frameStyle(frame, node.opacity), children: contentViews(node, ctx, path, o) };
     var decorated = ctx.decorate ? ctx.decorate(node, view, ctx, { path: path, frame: frame }) : undefined;
     return decorated || view;
   }
