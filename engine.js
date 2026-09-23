@@ -741,8 +741,12 @@
   }
 
   // The guest page draws through ZeDocCore.nodeView with decorateNode layered on.
-  function renderNode(node, ctx, yOverride, heightGrow) {
-    var view = ZeDocCore.nodeView(node, ctx, { y: yOverride, heightGrow: heightGrow });
+  // `childLayout` (a reflowNodes() result for `node`'s own children, set when
+  // `node` is a top-level group with a nested repeat that grew) has to be
+  // forwarded to nodeView here, or a group's own children never see the
+  // shift/grow reflowNodes computed for them - see reflowNodes' doc comment.
+  function renderNode(node, ctx, yOverride, heightGrow, childLayout) {
+    var view = ZeDocCore.nodeView(node, ctx, { y: yOverride, heightGrow: heightGrow, childLayout: childLayout });
     if (view && view.fragment) applyMotion(node, view); // a repeat is not decorated
     return view ? ZeDocCore.toHtml(view) : '';
   }
@@ -1167,7 +1171,7 @@
       if (paged.added) wishPagerAdded = true;
       var sectionLaid = reflowNodes(paged.nodes, data);
       var sectionHeight = section.size.h + counted.extra + paged.extra + sectionLaid.extra;
-      var sectionBodyHtml = sectionLaid.items.map(function (entry, i) { return renderNode(entry.node, sectionCtx, entry.y, sectionLaid.bgHeightGrow[i]); }).join('');
+      var sectionBodyHtml = sectionLaid.items.map(function (entry, i) { return renderNode(entry.node, sectionCtx, entry.y, sectionLaid.bgHeightGrow[i], entry.childLayout); }).join('');
       var sectionBgStyle = styleStr(resolveFill(section.background, sectionCtx));
       var sectionKey = ZeDocCore.sectionOf(section);
       bodyHtml += '<div' + (sectionKey ? ' data-zd-section="' + sectionKey + '"' : '') + ' data-zd-section-index="' + s + '" data-zd-base-height="' + px(sectionHeight) + '" style="' + styleStr({ position: 'absolute', top: px(cursorY), left: 0, width: px(section.size.w), height: px(sectionHeight) }) + sectionBgStyle + '">' + sectionBodyHtml + '</div>';
@@ -1188,7 +1192,7 @@
     if (envelope && envelope.nodes.length > 0 && switches['opening-overlay'] !== false && !skipGate) {
       var envelopeCtx = ctxFor(envelope);
       var gateLaid = reflowNodes(unwrapBlock(envelope.nodes), data);
-      var gateBodyHtml = gateLaid.items.map(function (entry, i) { return renderNode(entry.node, envelopeCtx, entry.y, gateLaid.bgHeightGrow[i]); }).join('');
+      var gateBodyHtml = gateLaid.items.map(function (entry, i) { return renderNode(entry.node, envelopeCtx, entry.y, gateLaid.bgHeightGrow[i], entry.childLayout); }).join('');
       var gateTotalHeight = envelope.size.h + gateLaid.extra;
       var gateBgStyle = styleStr(resolveFill(envelope.background, envelopeCtx));
       gateHtml = '<div id="zd-gate" style="' + styleStr({ position: 'fixed', inset: 0, zIndex: 1000, overflow: 'hidden', cursor: 'pointer' }) + gateBgStyle +
