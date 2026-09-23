@@ -162,6 +162,12 @@ assert.ok(core.toHtml(rv).includes('one') && core.toHtml(rv).includes('two'))
 const items = core.repeatItemViews(rep, { ...lctx(), data: data2, place: (p) => (p === 'r#1' ? { y: 999, h: 60 } : undefined) }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 })
 assert.deepStrictEqual(items.map((v) => [v.style.left, v.style.top, v.style.height]), [['0px', '0px', '50px'], ['0px', '999px', '60px']])
 assert.strictEqual(items[0].children[0].children[0].measure, 'r#0/q') // text inside an item is measured under its path
+// a repeat nested inside a group (a couple's own "block" regroup on canvas):
+// origin is the repeat's own position within that group, not 0,0 - a
+// flow-placed item's y is local to the repeat (see boxOf() in flow.ts) and
+// has to land at origin.y + that offset, not replace origin entirely.
+const nestedItems = core.repeatItemViews(rep, { ...lctx(), data: data2, place: (p) => (p === 'r#0' ? { y: 0, h: 50 } : p === 'r#1' ? { y: 50, h: 60 } : undefined) }, 'r', { frame: rep.frame, origin: { x: 0, y: 112 }, opacity: 1 })
+assert.deepStrictEqual(nestedItems.map((v) => v.style.top), ['112px', '162px'])
 // an empty repeat: one stand-in item on the canvas, nothing for a guest
 assert.strictEqual(core.repeatItemViews(rep, { ...lctx(), data: { ...ctx().data, quotes: [] } }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 }).length, 1)
 assert.strictEqual(core.repeatItemViews(rep, { ...ctx(), data: { ...ctx().data, quotes: [] } }, 'r', { frame: rep.frame, origin: { x: 0, y: 0 }, opacity: 1 }).length, 0)

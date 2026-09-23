@@ -954,8 +954,19 @@
    * edit mode when the list is empty), stacked at `i * frame.h` below `origin`.
    * `>1 column` lays items out as a scaled grid instead. The guest page puts
    * these straight into the section (origin = the node's own position); the
-   * canvas draws them inside the repeat's box (origin 0,0, opacity 1 - the box
-   * already applied it).
+   * canvas draws them inside the repeat's box (origin 0,0 when the repeat is
+   * a top-level artboard child - its own NodeFrame wrapper already applied
+   * that offset - but a non-zero origin when the repeat sits inside a group,
+   * since a repeat's own nodeView never wraps it in a positioned div of its
+   * own: repeatItemViews' items become direct children of whatever div does
+   * position them, so their top has to be relative to THAT div).
+   *
+   * `ctx.place(key)` is keyed by flow.ts's item path, whose `y` is always
+   * local to the repeat (item i's authored position is `i * frame.h`,
+   * with no origin term - see boxOf() in flow.ts) - so it has to be added
+   * to `origin.y`, not substituted for it, or a repeat nested in a group
+   * renders its items at the group's own top instead of below the repeat's
+   * position within it.
    */
   function repeatItemViews(node, ctx, path, o) {
     var items = ctx.data[node.listKey] || [];
@@ -977,7 +988,7 @@
       } else {
         var itemFrame = Object.assign({}, frame, { x: o.origin.x, y: o.origin.y + i * frame.h });
         var placed = ctx.place && ctx.place(key);
-        if (placed) itemFrame = Object.assign(itemFrame, { y: placed.y, h: placed.h });
+        if (placed) itemFrame = Object.assign(itemFrame, { y: o.origin.y + placed.y, h: placed.h });
         style = frameStyle(itemFrame, o.opacity);
       }
       var unboundEventText = 0;
