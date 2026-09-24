@@ -1293,7 +1293,9 @@
       'var boxes=boxesOf(section);' +
       'var flowed=flowBoxes(boxes);' +
       'apply(boxes);' +
-      'var height=Math.max(parseFloat(section.getAttribute("data-zd-base-height"))||0,flowed.bottom);' +
+      // grown text moves the content down by flowed.shift; the section grows by the same, so its bottom padding survives
+      // (max with flowed.bottom: decoration hanging past the authored edge still counts)
+      'var baseH=parseFloat(section.getAttribute("data-zd-base-height"))||0;var height=Math.max(baseH+Math.max(0,flowed.shift),flowed.bottom);' +
       'section.style.height=height+"px";' +
       'section.style.top=cursor+"px";' +
       'cursor+=height;' +
