@@ -90,6 +90,9 @@
 
     var bgHeightGrow = {};
     nodes.forEach(function (node, i) {
+      // a group holding a repeat is as much taller as that repeat grew: its own height is what the text flow and the
+      // section's end measure from, so left at the authored height the content below spills past the section
+      if (childLayouts[i]) bgHeightGrow[i] = childLayouts[i].extra;
       if (!isStretchShape(node)) return;
       var y0 = node.frame.y;
       var y1 = y0 + node.frame.h;

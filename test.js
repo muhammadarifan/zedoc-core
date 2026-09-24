@@ -846,6 +846,11 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.strictEqual(nested.nodes.find((n) => n.id === 'foot').frame.y, 230 + 44)
   assert.strictEqual(core.withWishPager([wishRepeat({ verifiedCount: 3 })], 12).nodes.find((n) => n.id === 'zd-wish-pager').frame.y, 100 + 116 * 3) // after all the baseline items
 
+  // a group holding the list grows by what the list grew, so the text flow and the section end measure the real content
+  const laid = core.reflowNodes([{ id: 'g', type: 'group', visible: true, frame: rect(0, 0, 366, 300), children: [wishRepeat()] }], { wishes: wishes(5) })
+  assert.strictEqual(laid.items[0].childLayout.extra, 4 * 116)
+  assert.strictEqual(laid.bgHeightGrow[0], 4 * 116)
+
   // the guest page: only the first page is drawn, all of it travels as JSON, the pager row is there
   const wishDoc = docOf([]); wishDoc.artboards = [{ ...part('wishes', 300), nodes: [T('h', 'Head'), wishRepeat(), foot] }]
   const baseH = (h) => +h.match(/data-zd-base-height="(\d+)px"/)[1]
