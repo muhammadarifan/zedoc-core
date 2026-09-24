@@ -1420,7 +1420,7 @@
       'var message=msgEl?msgEl.value.trim():"";' +
       'var name=(nameEl?nameEl.value.trim():"")||T.guestFallback;' +
       'if(!message){zd2Toast(T.wishEmpty);return;}' +
-      'if(!wslug){zd2Toast(T.wishPreview);return;}' +
+      'if(!wslug||document.body.hasAttribute("data-zd2-preview")){zd2Toast(T.wishPreview);return;}' +
       // the wish shows at once (first on page 1); a refusal takes it back out
       'var undo=window.zd2AddWish?window.zd2AddWish({name:name,time:T.justNow,message:message}):null;' +
       'if(undo){msgEl.value="";if(nameEl&&!nameEl.readOnly)nameEl.value="";}' +
@@ -1622,7 +1622,7 @@
       'body[data-zd2-locked] [data-zd2-attend]{pointer-events:none}body[data-zd2-locked] [data-zd2-counts-event]{display:flex!important}' +
       'body[data-zd2-locked] .zd2-cnt{display:none!important}body[data-zd2-locked] .zd2-sum{display:flex!important}' +
       '.zd2-num{-moz-appearance:textfield}.zd2-num::-webkit-inner-spin-button,.zd2-num::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' + motionCss + musicCss + '</style>' +
-      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '"' + (data.canRsvp ? '' : ' data-zd2-can-rsvp="0"') + (data.rsvpLocked ? ' data-zd2-locked="1"' : '') + '>' +
+      '</head><body' + (motionUsed.any && gateHtml ? ' data-zd-gated="1"' : '') + ' data-zd2-slug="' + escapeHtml(data.slug || '') + '" data-zd2-guest-id="' + escapeHtml(data.guestId || '') + '"' + (data.canRsvp ? '' : ' data-zd2-can-rsvp="0"') + (data.rsvpLocked ? ' data-zd2-locked="1"' : '') + (data.isPreview ? ' data-zd2-preview="1"' : '') + '>' +
       '<div id="zd-wrap" style="position:relative;width:100%;overflow:hidden">' +
       '<div id="zd-stage" style="' + styleStr({ position: 'absolute', top: 0, left: 0, width: px(stageWidth), height: px(totalHeight) }) + '">' +
       bodyHtml +
