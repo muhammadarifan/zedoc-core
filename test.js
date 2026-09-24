@@ -835,6 +835,15 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.strictEqual(paged.nodes.find((n) => n.id === 'foot').frame.y, 230 + 44) // what sat below moves down by the pager's room
   assert.strictEqual(plain[2].frame.y, 230) // the caller's nodes are not touched
   assert.strictEqual(core.withWishPager(paged.nodes, 12).added, false) // idempotent
+  // the list inside a group (the section body wrapped by the designer): the pager joins that group, the group grows, what is below it moves
+  const grouped = [T('h', 'Head'), { id: 'g', name: '', type: 'group', visible: true, opacity: 1, frame: rect(28, 16, 374, 200), children: [wishRepeat({ frame: rect(0, 50, 366, 116) }), T('in', 'Inner foot', { frame: rect(0, 180, 100, 20) })] }, foot]
+  const nested = core.withWishPager(grouped, 12)
+  assert.ok(nested.added && nested.extra === 44)
+  const ng = nested.nodes.find((n) => n.id === 'g')
+  assert.strictEqual(ng.frame.h, 244)
+  assert.strictEqual(ng.children.find((n) => n.id === 'zd-wish-pager').frame.y, 166)
+  assert.strictEqual(ng.children.find((n) => n.id === 'in').frame.y, 224)
+  assert.strictEqual(nested.nodes.find((n) => n.id === 'foot').frame.y, 230 + 44)
   assert.strictEqual(core.withWishPager([wishRepeat({ verifiedCount: 3 })], 12).nodes.find((n) => n.id === 'zd-wish-pager').frame.y, 100 + 116 * 3) // after all the baseline items
 
   // the guest page: only the first page is drawn, all of it travels as JSON, the pager row is there

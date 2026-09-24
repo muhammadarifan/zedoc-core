@@ -1426,7 +1426,25 @@
   function withWishPager(nodes, total) {
     var repeat = nodes.filter(function (n) { return n.type === 'repeat' && n.listKey === 'wishes'; })[0];
     var has = nodes.some(function (n) { var r = guestRole(n); return !!r && r.role === 'wish-pager'; });
-    if (!repeat || has) return { nodes: nodes, extra: 0, added: false };
+    if (has) return { nodes: nodes, extra: 0, added: false };
+    if (!repeat) {
+      // the list can sit inside a group (a designer that wraps the section body): pager goes in that group, the group
+      // grows and what sits below it moves, same as at the top level
+      for (var g = 0; g < nodes.length; g++) {
+        var grp = nodes[g];
+        if (grp.type !== 'group' || !grp.children) continue;
+        var inner = withWishPager(grp.children, total);
+        if (!inner.added) continue;
+        var gEnd = grp.frame.y + grp.frame.h;
+        var moved = nodes.map(function (n, i) {
+          if (i === g) return Object.assign({}, grp, { children: inner.nodes, frame: Object.assign({}, grp.frame, { h: grp.frame.h + inner.extra }) });
+          if (inner.extra && n.frame.y >= gEnd - 1) return Object.assign({}, n, { frame: Object.assign({}, n.frame, { y: n.frame.y + inner.extra }) });
+          return n;
+        });
+        return { nodes: moved, extra: inner.extra, added: true };
+      }
+      return { nodes: nodes, extra: 0, added: false };
+    }
     var baseline = repeat.verifiedCount != null ? repeat.verifiedCount : 1;
     var end = repeat.frame.y + repeat.frame.h * baseline;
     // Up to one page the pager is there but hidden and takes no room: a wish sent from this page can turn it on
