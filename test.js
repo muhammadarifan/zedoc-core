@@ -851,6 +851,10 @@ assert.ok(!html.includes('id="zd-gate"') && !html.includes('data-zd-gated="1"'))
   assert.strictEqual(laid.items[0].childLayout.extra, 4 * 116)
   assert.strictEqual(laid.bgHeightGrow[0], 4 * 116)
 
+  // a card drawn as "<Something> bg" stretches with its text like a "<Something> background" does
+  assert.ok(core.isStretchShape({ type: 'shape', name: 'Wish card bg' }) && core.isStretchShape({ type: 'shape', name: 'Card background' }))
+  assert.ok(!core.isStretchShape({ type: 'shape', name: 'Wish bgcolor' }) && !core.isStretchShape({ type: 'text', name: 'Wish card bg' }))
+
   // the guest page: only the first page is drawn, all of it travels as JSON, the pager row is there
   const wishDoc = docOf([]); wishDoc.artboards = [{ ...part('wishes', 300), nodes: [T('h', 'Head'), wishRepeat(), foot] }]
   const baseH = (h) => +h.match(/data-zd-base-height="(\d+)px"/)[1]

@@ -452,12 +452,12 @@
   /**
    * A shape that stretches with the text growing beside/inside it: a partial
    * background ("Card background", a button's pill) named "<Something>
-   * background", or a timeline's connector line ("Timeline line"), whose span
+   * background" or "<Something> bg", or a timeline's connector line ("Timeline line"), whose span
    * covers the story text next to it. It grows with the siblings that start
    * inside its span (see flowBoxes) and, for a repeat, with the items inside it.
    */
   function isStretchShape(node) {
-    return node.type === 'shape' && /(background|^timeline line)$/i.test(node.name || '');
+    return node.type === 'shape' && /(background|\bbg|^timeline line)$/i.test(node.name || '');
   }
 
   /**
